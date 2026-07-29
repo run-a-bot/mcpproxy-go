@@ -22,10 +22,16 @@ RUN CGO_ENABLED=0 go build \
     -ldflags "-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${BUILD_DATE} -X github.com/smart-mcp-proxy/mcpproxy-go/internal/httpapi.buildVersion=${VERSION} -X github.com/smart-mcp-proxy/mcpproxy-go/internal/updatecheck.buildChannel=docker -s -w" \
     -o /mcpproxy ./cmd/mcpproxy
 
-# Runtime stage
-FROM gcr.io/distroless/static-debian12
+# Runtime stage. Alpine provides /bin/sh for the Runabot web terminal.
+FROM alpine:3.22
+
+RUN apk add --no-cache ca-certificates && \
+    addgroup -g 65532 -S nonroot && \
+    adduser -u 65532 -S -G nonroot nonroot
 
 COPY --from=builder /mcpproxy /usr/local/bin/mcpproxy
+
+USER 65532:65532
 
 EXPOSE 8080
 
