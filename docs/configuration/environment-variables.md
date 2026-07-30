@@ -43,6 +43,11 @@ Environment variables are useful for CI/CD environments or temporary overrides d
 | `MCPPROXY_TLS_KEY` | Path to TLS private key | - |
 | `MCPPROXY_TLS_REQUIRE_CLIENT_CERT` | Require client certificates for mTLS | `false` |
 | `MCPPROXY_CERTS_DIR` | Custom directory for TLS certificates | - |
+| `MCPPROXY_DASHBOARD_TLS_ENABLED` | Enable the dedicated dashboard mTLS listener | `false` |
+| `MCPPROXY_DASHBOARD_TLS_LISTEN` | Dashboard listener address | - |
+| `MCPPROXY_DASHBOARD_TLS_CERT_FILE` | Dashboard server certificate path | - |
+| `MCPPROXY_DASHBOARD_TLS_KEY_FILE` | Dashboard server private key path | - |
+| `MCPPROXY_DASHBOARD_TLS_CLIENT_CA_FILE` | Client CA certificate path | - |
 
 **Note:** TLS certificates are managed in `~/.mcpproxy/certs/` or via the `tls.certs_dir` config option. Use `mcpproxy trust-cert` to set up certificates.
 

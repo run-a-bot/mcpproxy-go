@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -439,6 +440,10 @@ type Config struct {
 	// TLS configuration
 	TLS *TLSConfig `json:"tls,omitempty" mapstructure:"tls"`
 
+	// DashboardTLS exposes the existing HTTP handler on a dedicated mTLS
+	// listener while leaving the primary MCP listener unchanged.
+	DashboardTLS *DashboardTLSConfig `json:"dashboard_tls,omitempty" mapstructure:"dashboard-tls"`
+
 	// Tokenizer configuration for token counting
 	Tokenizer *TokenizerConfig `json:"tokenizer,omitempty" mapstructure:"tokenizer"`
 
@@ -574,6 +579,17 @@ type TLSConfig struct {
 	RequireClientCert bool   `json:"require_client_cert" mapstructure:"require_client_cert"` // Enable mTLS
 	CertsDir          string `json:"certs_dir,omitempty" mapstructure:"certs_dir"`           // Directory for certificates
 	HSTS              bool   `json:"hsts" mapstructure:"hsts"`                               // Enable HTTP Strict Transport Security
+}
+
+// DashboardTLSConfig configures a separate mTLS listener for trusted
+// administrative reverse proxies. It does not change authentication or TLS on
+// the primary MCP listener.
+type DashboardTLSConfig struct {
+	Enabled      bool   `json:"enabled" mapstructure:"enabled"`
+	Listen       string `json:"listen" mapstructure:"listen"`
+	CertFile     string `json:"cert_file" mapstructure:"cert-file"`
+	KeyFile      string `json:"key_file" mapstructure:"key-file"`
+	ClientCAFile string `json:"client_ca_file" mapstructure:"client-ca-file"`
 }
 
 // TokenizerConfig represents tokenizer configuration for token counting
@@ -2516,6 +2532,35 @@ func (c *Config) validateDetailedCore() []ValidationError {
 				errors = append(errors, ValidationError{
 					Field:   "tls.certs_dir",
 					Message: fmt.Sprintf("directory does not exist: %s", c.TLS.CertsDir),
+				})
+			}
+		}
+	}
+
+	if c.DashboardTLS != nil && c.DashboardTLS.Enabled {
+		if _, _, err := net.SplitHostPort(c.DashboardTLS.Listen); err != nil {
+			errors = append(errors, ValidationError{
+				Field:   "dashboard_tls.listen",
+				Message: fmt.Sprintf("invalid listen address: %v", err),
+			})
+		}
+		requiredFiles := []struct {
+			field string
+			path  string
+		}{
+			{field: "dashboard_tls.cert_file", path: c.DashboardTLS.CertFile},
+			{field: "dashboard_tls.key_file", path: c.DashboardTLS.KeyFile},
+			{field: "dashboard_tls.client_ca_file", path: c.DashboardTLS.ClientCAFile},
+		}
+		for _, required := range requiredFiles {
+			if strings.TrimSpace(required.path) == "" {
+				errors = append(errors, ValidationError{Field: required.field, Message: "path is required"})
+				continue
+			}
+			if _, err := os.Stat(required.path); err != nil {
+				errors = append(errors, ValidationError{
+					Field:   required.field,
+					Message: fmt.Sprintf("file is unavailable: %v", err),
 				})
 			}
 		}

@@ -68,3 +68,44 @@ Add client methods for access-profile and agent-token management APIs.
 - Existing agent tokens can have their access profile list replaced without
   changing their secret.
 - CLI and web UI expose access-profile management.
+
+### 2. Add native mTLS listener for Runabot
+
+#### background
+
+The dashboard needs a native listener mode for deployments that require
+transport encryption and client certificate authentication without placing a
+separate TLS terminator in front of MCPProxy.
+
+#### files
+
+##### internal/config/config.go (modify)
+
+Add configuration for the dashboard TLS listener and its client-certificate
+authentication settings.
+
+##### internal/config/loader.go (modify)
+
+Load and validate the mTLS listener configuration, including certificate,
+private-key, and client-CA paths.
+
+##### internal/server/dashboard_tls.go (create)
+
+Create the native HTTPS listener and configure mutual TLS verification for
+clients presenting certificates signed by the configured client CA.
+
+##### internal/server/server.go (modify)
+
+Start and manage the dashboard mTLS listener alongside the existing server
+lifecycle and shutdown paths.
+
+##### docs/configuration.md (modify)
+
+Document dashboard TLS and mTLS configuration options.
+
+#### verify
+
+- The dashboard can listen with server-side TLS.
+- When client verification is enabled, only certificates signed by the
+  configured client CA are accepted.
+- Configuration hot reload and graceful shutdown handle the listener safely.
