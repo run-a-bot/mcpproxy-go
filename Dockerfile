@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26.5-alpine3.24 AS builder
 
 RUN apk add --no-cache git nodejs npm make
 
@@ -23,7 +23,7 @@ RUN CGO_ENABLED=0 go build \
     -o /mcpproxy ./cmd/mcpproxy
 
 # Runtime stage. Alpine provides /bin/sh for the Runabot web terminal.
-FROM alpine:3.22
+FROM alpine:3.24.1
 
 RUN apk add --no-cache ca-certificates && \
     addgroup -g 65532 -S nonroot && \

@@ -103,11 +103,12 @@ type Server struct {
 	mcpProxy *MCPProxyServer
 
 	// Server control
-	httpServer      *http.Server
-	listenerManager *ListenerManager
-	running         bool
-	listenAddr      string
-	mu              sync.RWMutex
+	httpServer          *http.Server
+	dashboardHTTPServer *http.Server
+	listenerManager     *ListenerManager
+	running             bool
+	listenAddr          string
+	mu                  sync.RWMutex
 
 	serverCtx    context.Context
 	serverCancel context.CancelFunc
@@ -989,6 +990,7 @@ func (s *Server) Shutdown() error {
 	}
 	s.shutdown = true
 	httpServer := s.httpServer
+	dashboardHTTPServer := s.dashboardHTTPServer
 	startTime := s.startTime
 	reason := s.shutdownReason
 	signal := s.shutdownSignal
@@ -1018,6 +1020,16 @@ func (s *Server) Shutdown() error {
 	}
 
 	s.logger.Info("Shutting down MCP proxy server...")
+
+	if dashboardHTTPServer != nil {
+		s.logger.Info("Gracefully shutting down dashboard mTLS server...")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if err := dashboardHTTPServer.Shutdown(ctx); err != nil {
+			s.logger.Warn("Dashboard mTLS server forced shutdown due to timeout", zap.Error(err))
+			_ = dashboardHTTPServer.Close()
+		}
+		cancel()
+	}
 
 	// Gracefully shutdown HTTP server first to stop accepting new connections
 	if httpServer != nil {
@@ -2030,6 +2042,7 @@ func (s *Server) StopServer() error {
 
 	// Capture httpServer reference while holding the lock
 	httpServer := s.httpServer
+	dashboardHTTPServer := s.dashboardHTTPServer
 	s.mu.Unlock()
 
 	// Notify about server stopping
@@ -2037,6 +2050,18 @@ func (s *Server) StopServer() error {
 	_ = s.logger.Sync()
 
 	s.updateStatus(runtime.PhaseStopping, "Server is stopping...")
+
+	if dashboardHTTPServer != nil {
+		s.logger.Info("STOPSERVER - Shutting down dashboard mTLS server gracefully")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		if err := dashboardHTTPServer.Shutdown(shutdownCtx); err != nil {
+			s.logger.Warn("STOPSERVER - Dashboard mTLS server forced shutdown due to timeout", zap.Error(err))
+			if closeErr := dashboardHTTPServer.Close(); closeErr != nil {
+				s.logger.Error("STOPSERVER - Failed to force close dashboard mTLS server", zap.Error(closeErr))
+			}
+		}
+		cancel()
+	}
 
 	// STEP 1: Gracefully shutdown HTTP server FIRST to stop accepting new connections
 	// This must happen before we disconnect upstream servers to prevent new requests
@@ -2788,6 +2813,17 @@ func (s *Server) startCustomHTTPServer(ctx context.Context, streamableServer *se
 	})
 	s.logger.Info("Registered Web UI endpoints", zap.Strings("ui_endpoints", []string{"/ui/", "/"}))
 
+	dashboardHTTPServer, dashboardListener, err := newDashboardMTLSServer(cfg.DashboardTLS, mux, s.logger)
+	if err != nil {
+		_ = listenerManager.CloseAll()
+		return fmt.Errorf("initialize dashboard mTLS listener: %w", err)
+	}
+	if dashboardHTTPServer != nil {
+		defer func() {
+			_ = dashboardHTTPServer.Close()
+		}()
+	}
+
 	// Determine actual TCP address for logging
 	var actualAddr, displayAddr string
 	if tcpListener != nil {
@@ -2840,6 +2876,7 @@ func (s *Server) startCustomHTTPServer(ctx context.Context, streamableServer *se
 		// Tag connections with their source (TCP vs Tray)
 		ConnContext: taggedConnContext,
 	}
+	s.dashboardHTTPServer = dashboardHTTPServer
 	s.running = true
 	s.runtime.SetRunning(true)
 	s.listenAddr = displayAddr
@@ -2890,6 +2927,17 @@ func (s *Server) startCustomHTTPServer(ctx context.Context, streamableServer *se
 
 	// Setup error channel for server communication
 	serverErrCh := make(chan error, 1)
+
+	if dashboardHTTPServer != nil {
+		go func() {
+			if err := dashboardHTTPServer.Serve(dashboardListener); err != nil && err != http.ErrServerClosed {
+				select {
+				case serverErrCh <- fmt.Errorf("dashboard mTLS server error: %w", err):
+				default:
+				}
+			}
+		}()
+	}
 
 	// Apply TLS configuration if enabled
 	if cfg.TLS != nil && cfg.TLS.Enabled {
@@ -2971,6 +3019,12 @@ func (s *Server) startCustomHTTPServer(ctx context.Context, streamableServer *se
 		// to avoid race conditions during graceful shutdown
 		return ctx.Err()
 	case err := <-serverErrCh:
+		if err != nil {
+			_ = s.httpServer.Close()
+			if dashboardHTTPServer != nil {
+				_ = dashboardHTTPServer.Close()
+			}
+		}
 		return err
 	}
 }

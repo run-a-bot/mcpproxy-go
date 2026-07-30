@@ -868,6 +868,29 @@ The tokenizer automatically maps model names to encodings:
 
 See [Setup Guide - HTTPS](setup.md#optional-https-setup) for complete details.
 
+### Dedicated dashboard mTLS listener
+
+Use `dashboard_tls` when a trusted administrative reverse proxy needs mTLS
+without changing the protocol or authentication used by MCP clients on the
+primary listener:
+
+```json
+{
+  "dashboard_tls": {
+    "enabled": true,
+    "listen": "0.0.0.0:8443",
+    "cert_file": "/var/run/mcpproxy/dashboard-mtls/tls.crt",
+    "key_file": "/var/run/mcpproxy/dashboard-mtls/tls.key",
+    "client_ca_file": "/var/run/mcpproxy/dashboard-mtls/ca.crt"
+  }
+}
+```
+
+The listener serves the same HTTP routes as the primary listener but requires a
+client certificate signed by `client_ca_file`. API-key and agent-token
+authorization still apply normally. Changing this block requires a server
+restart.
+
 ---
 
 ## Logging Configuration
@@ -1587,6 +1610,11 @@ Many configuration options can be overridden via environment variables:
 | `MCPPROXY_TLS_ENABLED` | `tls.enabled` | Enable HTTPS/TLS |
 | `MCPPROXY_TLS_REQUIRE_CLIENT_CERT` | `tls.require_client_cert` | Enable mTLS |
 | `MCPPROXY_CERTS_DIR` | `tls.certs_dir` | Custom certificates directory |
+| `MCPPROXY_DASHBOARD_TLS_ENABLED` | `dashboard_tls.enabled` | Enable the dedicated dashboard mTLS listener |
+| `MCPPROXY_DASHBOARD_TLS_LISTEN` | `dashboard_tls.listen` | Dashboard listener address |
+| `MCPPROXY_DASHBOARD_TLS_CERT_FILE` | `dashboard_tls.cert_file` | Dashboard server certificate |
+| `MCPPROXY_DASHBOARD_TLS_KEY_FILE` | `dashboard_tls.key_file` | Dashboard server private key |
+| `MCPPROXY_DASHBOARD_TLS_CLIENT_CA_FILE` | `dashboard_tls.client_ca_file` | CA used to verify dashboard clients |
 | `MCPPROXY_DATA` | `data_dir` | Override data directory |
 | `MCPPROXY_TOOL_RESPONSE_MODE` | `tool_response_mode` | `retrieve_tools` serialization: `full` (default) or `compact` |
 | `MCPPROXY_DIRECT_TOOL_RESPONSE_MODE` | `direct_tool_response_mode` | Direct enumeration surface serialization: `full` (default) or `deferred` |
