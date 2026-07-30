@@ -11,6 +11,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestDetectConfigChanges_DashboardTLSRequiresRestart(t *testing.T) {
+	base := &config.Config{
+		Listen:  "127.0.0.1:8080",
+		DataDir: "/d",
+		TLS:     &config.TLSConfig{},
+	}
+	changed := &config.Config{
+		Listen:  "127.0.0.1:8080",
+		DataDir: "/d",
+		TLS:     &config.TLSConfig{},
+		DashboardTLS: &config.DashboardTLSConfig{
+			Enabled:      true,
+			Listen:       "127.0.0.1:8443",
+			CertFile:     "/tls/tls.crt",
+			KeyFile:      "/tls/tls.key",
+			ClientCAFile: "/tls/ca.crt",
+		},
+	}
+
+	result := DetectConfigChanges(base, changed)
+	require.True(t, result.Success)
+	assert.Equal(t, []string{"dashboard_tls"}, result.ChangedFields)
+	assert.True(t, result.RequiresRestart)
+	assert.False(t, result.AppliedImmediately)
+}
+
 // TestDetectConfigChanges_Observability (MCP-835 / Codex finding #3): changing
 // the observability usage cadence must be detected as a hot-reloadable change so
 // ApplyConfig can push the new persist interval to the running ActivityService.

@@ -182,6 +182,14 @@ func DetectConfigChanges(oldCfg, newCfg *config.Config) *ConfigApplyResult {
 		return result
 	}
 
+	if !reflect.DeepEqual(oldCfg.DashboardTLS, newCfg.DashboardTLS) {
+		result.ChangedFields = append(result.ChangedFields, "dashboard_tls")
+		result.RequiresRestart = true
+		result.AppliedImmediately = false
+		result.RestartReason = "Dashboard TLS configuration changed - requires HTTP server restart"
+		return result
+	}
+
 	// Track hot-reloadable changes
 
 	// Server configuration changes (can be hot-reloaded).

@@ -657,6 +657,33 @@ func applyTLSEnvOverrides(cfg *Config) {
 		cfg.TLS.CertsDir = value
 	}
 
+	dashboardEnabled := os.Getenv("MCPPROXY_DASHBOARD_TLS_ENABLED")
+	dashboardListen := os.Getenv("MCPPROXY_DASHBOARD_TLS_LISTEN")
+	dashboardCertFile := os.Getenv("MCPPROXY_DASHBOARD_TLS_CERT_FILE")
+	dashboardKeyFile := os.Getenv("MCPPROXY_DASHBOARD_TLS_KEY_FILE")
+	dashboardClientCAFile := os.Getenv("MCPPROXY_DASHBOARD_TLS_CLIENT_CA_FILE")
+	if dashboardEnabled != "" || dashboardListen != "" || dashboardCertFile != "" ||
+		dashboardKeyFile != "" || dashboardClientCAFile != "" {
+		if cfg.DashboardTLS == nil {
+			cfg.DashboardTLS = &DashboardTLSConfig{}
+		}
+		if dashboardEnabled != "" {
+			cfg.DashboardTLS.Enabled = dashboardEnabled == trueValue || dashboardEnabled == "1"
+		}
+		if dashboardListen != "" {
+			cfg.DashboardTLS.Listen = dashboardListen
+		}
+		if dashboardCertFile != "" {
+			cfg.DashboardTLS.CertFile = dashboardCertFile
+		}
+		if dashboardKeyFile != "" {
+			cfg.DashboardTLS.KeyFile = dashboardKeyFile
+		}
+		if dashboardClientCAFile != "" {
+			cfg.DashboardTLS.ClientCAFile = dashboardClientCAFile
+		}
+	}
+
 	// Override data directory from environment (for backward compatibility)
 	if value := os.Getenv("MCPPROXY_DATA"); value != "" {
 		cfg.DataDir = value
