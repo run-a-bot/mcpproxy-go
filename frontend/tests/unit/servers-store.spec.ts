@@ -8,8 +8,57 @@ vi.mock('@/services/api', () => ({
     getServers: vi.fn(),
     securityApprove: vi.fn(),
     unquarantineServer: vi.fn(),
+    triggerOAuthLogin: vi.fn(),
   },
 }))
+
+describe('useServersStore — OAuth login browser handoff', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  it('opens the returned authorization URL in a user-initiated tab', async () => {
+    const replace = vi.fn()
+    const close = vi.fn()
+    const popup = {
+      close,
+      location: { replace },
+      opener: window,
+    }
+    const open = vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window)
+    ;(api.triggerOAuthLogin as any).mockResolvedValueOnce({
+      success: true,
+      data: { auth_url: 'https://provider.example/authorize?client_id=test' },
+    })
+
+    const store = useServersStore()
+    await expect(store.triggerOAuthLogin('github')).resolves.toBe(true)
+
+    expect(open).toHaveBeenCalledWith('about:blank', '_blank')
+    expect(replace).toHaveBeenCalledWith('https://provider.example/authorize?client_id=test')
+    expect(popup.opener).toBeNull()
+    expect(close).not.toHaveBeenCalled()
+  })
+
+  it('closes the placeholder tab when the API does not return an authorization URL', async () => {
+    const close = vi.fn()
+    vi.spyOn(window, 'open').mockReturnValue({
+      close,
+      location: { replace: vi.fn() },
+    } as unknown as Window)
+    ;(api.triggerOAuthLogin as any).mockResolvedValueOnce({
+      success: true,
+      data: {},
+    })
+
+    const store = useServersStore()
+    await expect(store.triggerOAuthLogin('github')).rejects.toThrow(
+      'OAuth provider did not return an authorization URL',
+    )
+    expect(close).toHaveBeenCalled()
+  })
+})
 
 describe('useServersStore — mergeServers field-clearing (issue #438)', () => {
   beforeEach(() => {

@@ -1840,6 +1840,10 @@ type AddServerRequest struct {
 	MaxConcurrentRequests *int             `json:"max_concurrent_requests,omitempty"`
 	QueueSize             *int             `json:"queue_size,omitempty"`
 	QueueTimeout          *config.Duration `json:"queue_timeout,omitempty" swaggertype:"string"`
+	// OAuth carries static client credentials and optional provider overrides.
+	// PATCH delegates deep-merge semantics to config.MergeOAuthConfig, so an
+	// omitted/empty client_secret preserves the existing stored secret.
+	OAuth *config.OAuthConfig `json:"oauth,omitempty"`
 	// Isolation carries per-server Docker isolation overrides (enabled,
 	// mode_override, image, network_mode, extra_args, working_dir). A nil
 	// pointer means "do not touch isolation config". A present object is
@@ -2187,6 +2191,9 @@ func (s *Server) handleAddServer(w http.ResponseWriter, r *http.Request) {
 	if req.QueueTimeout != nil {
 		serverConfig.QueueTimeout = req.QueueTimeout
 	}
+	if req.OAuth != nil {
+		serverConfig.OAuth = req.OAuth
+	}
 	// Carry the per-server Docker isolation override through on create. The
 	// AddServerRequest has always declared (and documented) an Isolation
 	// field, but only the PATCH/update path mapped it — on create it was
@@ -2526,6 +2533,10 @@ func (s *Server) handlePatchServer(w http.ResponseWriter, r *http.Request) {
 		hasUpdates = true
 	} else if existingSrv != nil {
 		updates.QueueTimeout = existingSrv.QueueTimeout
+	}
+	if req.OAuth != nil {
+		updates.OAuth = req.OAuth
+		hasUpdates = true
 	}
 	// Isolation is resolved against the PERSISTED overrides, so an omitted
 	// `enabled` cannot become an explicit opt-out and the fields the request
