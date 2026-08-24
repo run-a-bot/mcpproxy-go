@@ -19,6 +19,8 @@ import (
 // This interface is satisfied by *storage.Manager.
 type TokenStore interface {
 	CreateAgentToken(token auth.AgentToken, rawToken string, hmacKey []byte) error
+	UpdateAgentToken(name string, token auth.AgentToken) error
+	UpdateAgentTokenProfilePins(name string, pins []string) error
 	ListAgentTokens() ([]auth.AgentToken, error)
 	GetAgentTokenByName(name string) (*auth.AgentToken, error)
 	RevokeAgentToken(name string) error
@@ -40,6 +42,29 @@ type createTokenRequest struct {
 	Permissions    []string `json:"permissions"`
 	ExpiresIn      string   `json:"expires_in"`
 	ProfilePin     string   `json:"profile_pin,omitempty"`
+	AccessProfiles []string `json:"access_profiles,omitempty"`
+}
+
+type updateTokenProfilePinsRequest struct {
+	AccessProfiles []string `json:"access_profiles"`
+}
+
+type updateTokenRequest struct {
+	Name           string   `json:"name"`
+	AllowedServers []string `json:"allowed_servers"`
+	Permissions    []string `json:"permissions"`
+	ExpiresIn      string   `json:"expires_in"`
+	AccessProfiles []string `json:"access_profiles"`
+}
+
+func normalizedProfilePins(legacy string, pins []string) []string {
+	if len(pins) > 0 {
+		return append([]string(nil), pins...)
+	}
+	if legacy != "" {
+		return []string{legacy}
+	}
+	return nil
 }
 
 // createTokenResponse is the JSON response for POST /api/v1/tokens.
@@ -51,6 +76,7 @@ type createTokenResponse struct {
 	ExpiresAt      time.Time `json:"expires_at"`
 	CreatedAt      time.Time `json:"created_at"`
 	ProfilePin     string    `json:"profile_pin,omitempty"`
+	AccessProfiles []string  `json:"access_profiles,omitempty"`
 }
 
 // tokenInfoResponse is the JSON response for GET endpoints (no secret).
@@ -64,6 +90,7 @@ type tokenInfoResponse struct {
 	LastUsedAt     *time.Time `json:"last_used_at,omitempty"`
 	Revoked        bool       `json:"revoked"`
 	ProfilePin     string     `json:"profile_pin,omitempty"`
+	AccessProfiles []string   `json:"access_profiles,omitempty"`
 }
 
 // regenerateTokenResponse is the JSON response for POST /api/v1/tokens/{name}/regenerate.
@@ -155,8 +182,9 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 	// Validate profile_pin (Profiles v2 T3): the slug must name a configured
 	// profile at creation time. Later config changes are warn-skipped at request
 	// time by the resolver, not hard-failed here.
-	if req.ProfilePin != "" {
-		if err := s.validateProfilePin(req.ProfilePin); err != nil {
+	profilePins := normalizedProfilePins(req.ProfilePin, req.AccessProfiles)
+	for _, pin := range profilePins {
+		if err := s.validateProfilePin(pin); err != nil {
 			s.writeError(w, r, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -186,6 +214,7 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt:      expiresAt,
 		CreatedAt:      now,
 		ProfilePin:     req.ProfilePin,
+		AccessProfiles: profilePins,
 	}
 
 	if err := s.tokenStore.CreateAgentToken(agentToken, rawToken, hmacKey); err != nil {
@@ -207,6 +236,7 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt:      expiresAt,
 		CreatedAt:      now,
 		ProfilePin:     req.ProfilePin,
+		AccessProfiles: profilePins,
 	}
 
 	s.writeJSON(w, http.StatusCreated, contracts.NewSuccessResponse(resp))
@@ -234,6 +264,101 @@ func (s *Server) handleListTokens(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.writeSuccess(w, map[string]interface{}{"tokens": result})
+}
+
+// handleUpdateTokenProfilePins updates the profile allowlist for an existing
+// token without rotating its secret.
+func (s *Server) handleUpdateTokenProfilePins(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdminAuth(w, r) {
+		return
+	}
+	if !s.requireTokenStore(w, r) {
+		return
+	}
+	name := chi.URLParam(r, "name")
+	var req updateTokenProfilePinsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	seen := make(map[string]struct{}, len(req.AccessProfiles))
+	for _, pin := range req.AccessProfiles {
+		if pin == "" {
+			s.writeError(w, r, http.StatusBadRequest, "access_profiles cannot contain empty names")
+			return
+		}
+		if _, ok := seen[pin]; ok {
+			s.writeError(w, r, http.StatusBadRequest, fmt.Sprintf("duplicate access_profile %q", pin))
+			return
+		}
+		seen[pin] = struct{}{}
+		if err := s.validateProfilePin(pin); err != nil {
+			s.writeError(w, r, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if err := s.tokenStore.UpdateAgentTokenProfilePins(name, req.AccessProfiles); err != nil {
+		s.writeError(w, r, http.StatusNotFound, err.Error())
+		return
+	}
+	t, err := s.tokenStore.GetAgentTokenByName(name)
+	if err != nil || t == nil {
+		s.writeError(w, r, http.StatusNotFound, "agent token not found")
+		return
+	}
+	s.writeJSON(w, http.StatusOK, contracts.NewSuccessResponse(tokenToInfoResponse(*t)))
+}
+
+func (s *Server) handleUpdateToken(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdminAuth(w, r) || !s.requireTokenStore(w, r) {
+		return
+	}
+	oldName := chi.URLParam(r, "name")
+	var req updateTokenRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := validateTokenName(req.Name); err != nil {
+		s.writeError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateTokenPermissions(req.Permissions); err != nil {
+		s.writeError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateAllowedServers(req.AllowedServers, s.controller); err != nil {
+		s.writeError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	expiresAt, err := parseExpiry(req.ExpiresIn)
+	if err != nil {
+		s.writeError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	for _, pin := range req.AccessProfiles {
+		if err := s.validateProfilePin(pin); err != nil {
+			s.writeError(w, r, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	old, err := s.tokenStore.GetAgentTokenByName(oldName)
+	if err != nil || old == nil {
+		s.writeError(w, r, http.StatusNotFound, "agent token not found")
+		return
+	}
+	updated := *old
+	updated.Name, updated.AllowedServers, updated.Permissions, updated.ExpiresAt = req.Name, req.AllowedServers, req.Permissions, expiresAt
+	updated.AccessProfiles = append([]string(nil), req.AccessProfiles...)
+	updated.ProfilePin = ""
+	if len(req.AccessProfiles) == 1 {
+		updated.ProfilePin = req.AccessProfiles[0]
+	}
+	if err := s.tokenStore.UpdateAgentToken(oldName, updated); err != nil {
+		s.writeError(w, r, http.StatusConflict, err.Error())
+		return
+	}
+	s.writeJSON(w, http.StatusOK, contracts.NewSuccessResponse(tokenToInfoResponse(updated)))
 }
 
 // handleGetToken handles GET /api/v1/tokens/{name}
@@ -501,5 +626,6 @@ func tokenToInfoResponse(t auth.AgentToken) tokenInfoResponse {
 		LastUsedAt:     t.LastUsedAt,
 		Revoked:        t.Revoked,
 		ProfilePin:     t.ProfilePin,
+		AccessProfiles: append([]string(nil), t.AccessProfiles...),
 	}
 }

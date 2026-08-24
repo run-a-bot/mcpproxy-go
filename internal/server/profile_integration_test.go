@@ -264,6 +264,56 @@ func TestProfile_RetrieveToolsIsolation(t *testing.T) {
 	}
 }
 
+// TestProfile_PerServerToolSelection verifies the complete profile tool
+// selection path: a selected tool is discoverable and callable, while an
+// unselected tool from the same server is neither discoverable nor callable.
+func TestProfile_PerServerToolSelection(t *testing.T) {
+	env := newProfileTestEnv(t)
+	old := env.proxyServer.runtime.Config()
+	cfgCopy := *old
+	cfgCopy.Profiles = append(append([]config.ProfileConfig{}, old.Profiles...), config.ProfileConfig{
+		Name:    "research-limited",
+		Servers: []string{"research-srv"},
+		Tools:   map[string][]string{"research-srv": {"search_papers"}},
+	})
+	env.proxyServer.runtime.UpdateConfig(&cfgCopy, "")
+	require.NoError(t, env.proxyServer.runtime.IndexManager().RebuildProfileFromSharedWithTools(
+		"research-limited",
+		[]string{"research-srv"},
+		map[string][]string{"research-srv": {"search_papers"}},
+	))
+
+	ctx := context.Background()
+	baseURL := strings.TrimSuffix(env.proxyAddr, "/mcp")
+	limitedClient := env.clientAt(baseURL + "/mcp/p/research-limited")
+	env.initClient(limitedClient)
+
+	names := env.retrieveTools(ctx, limitedClient, "search papers fetch article")
+	assert.Contains(t, names, "research-srv:search_papers")
+	assert.NotContains(t, names, "research-srv:fetch_article")
+
+	allowed := mcp.CallToolRequest{}
+	allowed.Params.Name = "call_tool_read"
+	allowed.Params.Arguments = map[string]interface{}{
+		"name": "research-srv:search_papers",
+		"args": map[string]interface{}{},
+	}
+	allowedResult, err := limitedClient.CallTool(ctx, allowed)
+	require.NoError(t, err)
+	assert.NotContains(t, extractText(allowedResult), "not enabled in profile")
+
+	blocked := mcp.CallToolRequest{}
+	blocked.Params.Name = "call_tool_read"
+	blocked.Params.Arguments = map[string]interface{}{
+		"name": "research-srv:fetch_article",
+		"args": map[string]interface{}{},
+	}
+	blockedResult, err := limitedClient.CallTool(ctx, blocked)
+	require.NoError(t, err)
+	assert.True(t, blockedResult.IsError)
+	assert.Contains(t, extractText(blockedResult), `not enabled in profile "research-limited"`)
+}
+
 // TestProfile_FullMCPUnchanged verifies that /mcp returns the full union (SC-002).
 func TestProfile_FullMCPUnchanged(t *testing.T) {
 	env := newProfileTestEnv(t)

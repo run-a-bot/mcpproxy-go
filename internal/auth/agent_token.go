@@ -42,8 +42,9 @@ type AgentToken struct {
 	CreatedAt      time.Time  `json:"created_at"`
 	LastUsedAt     *time.Time `json:"last_used_at,omitempty"`
 	Revoked        bool       `json:"revoked"`
-	UserID         string     `json:"user_id,omitempty"`     // Owner user ID (server edition)
-	ProfilePin     string     `json:"profile_pin,omitempty"` // Profile this token is pinned to (Profiles v2 T3)
+	UserID         string     `json:"user_id,omitempty"`         // Owner user ID (server edition)
+	ProfilePin     string     `json:"profile_pin,omitempty"`     // Profile this token is pinned to (Profiles v2 T3)
+	AccessProfiles []string   `json:"access_profiles,omitempty"` // Profiles this token may use
 }
 
 // AuthContext builds the request AuthContext for a validated agent token. It
@@ -62,6 +63,7 @@ func (t *AgentToken) AuthContext() *AuthContext {
 		AllowedServers: t.AllowedServers,
 		Permissions:    t.Permissions,
 		ProfilePin:     t.ProfilePin,
+		AccessProfiles: append([]string(nil), t.AccessProfiles...),
 	}
 }
 

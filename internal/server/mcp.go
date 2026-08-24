@@ -2216,6 +2216,11 @@ func (p *MCPProxyServer) handleCallToolVariant(ctx context.Context, request mcp.
 		p.emitActivityPolicyDecision(serverName, actualToolName, getSessionID(), requestID, "blocked", errMsg, telemetry.BlockReasonProfileScope)
 		return mcp.NewToolResultError(errMsg), nil
 	}
+	if _, profileScope := p.resolveActiveProfile(ctx); profileScope != nil && !profileScope.AllowsTool(serverName, actualToolName) {
+		errMsg := fmt.Sprintf("tool %q is not enabled in profile %q", serverName+":"+actualToolName, profileScope.Name)
+		p.emitActivityPolicyDecision(serverName, actualToolName, getSessionID(), requestID, "blocked", errMsg, telemetry.BlockReasonProfileScope)
+		return mcp.NewToolResultError(errMsg), nil
+	}
 
 	// Spec 028: Enforce agent token scope restrictions
 	if authCtx := auth.AuthContextFromContext(ctx); authCtx != nil && !authCtx.IsAdmin() {

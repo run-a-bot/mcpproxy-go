@@ -9,9 +9,10 @@ import (
 
 // ProfileSummary is one entry of the GET /api/v1/profiles listing (Profiles v2 T2).
 type ProfileSummary struct {
-	Name      string   `json:"name"`
-	Servers   []string `json:"servers"`
-	ToolCount int      `json:"tool_count"`
+	Name      string              `json:"name"`
+	Servers   []string            `json:"servers"`
+	Tools     map[string][]string `json:"tools,omitempty"`
+	ToolCount int                 `json:"tool_count"`
 }
 
 // serverToolCounts builds a server-name → indexed-tool-count map from the
@@ -63,11 +64,16 @@ func (s *Server) handleListProfiles(w http.ResponseWriter, r *http.Request) {
 		eff := cfg.Profiles[i].EffectiveServers(cfg)
 		tc := 0
 		for _, name := range eff {
-			tc += toolCounts[name]
+			if selected, restricted := cfg.Profiles[i].Tools[name]; restricted {
+				tc += len(selected)
+			} else {
+				tc += toolCounts[name]
+			}
 		}
 		out = append(out, ProfileSummary{
 			Name:      cfg.Profiles[i].Name,
 			Servers:   eff,
+			Tools:     cfg.Profiles[i].Tools,
 			ToolCount: tc,
 		})
 	}

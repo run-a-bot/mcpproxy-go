@@ -75,6 +75,79 @@ func (m *Manager) CreateAgentToken(token auth.AgentToken, rawToken string, hmacK
 	})
 }
 
+// UpdateAgentTokenProfilePins changes the profile restrictions without changing
+// the token secret or any other token metadata.
+func (m *Manager) UpdateAgentTokenProfilePins(name string, pins []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.db.db.Update(func(tx *bbolt.Tx) error {
+		names := tx.Bucket([]byte(AgentTokenNamesBucket))
+		bucket := tx.Bucket([]byte(AgentTokensBucket))
+		if names == nil || bucket == nil {
+			return fmt.Errorf("agent token %q not found", name)
+		}
+		hash := names.Get([]byte(name))
+		if hash == nil {
+			return fmt.Errorf("agent token %q not found", name)
+		}
+		data := bucket.Get(hash)
+		if data == nil {
+			return fmt.Errorf("agent token %q not found", name)
+		}
+		var token auth.AgentToken
+		if err := json.Unmarshal(data, &token); err != nil {
+			return fmt.Errorf("failed to unmarshal agent token: %w", err)
+		}
+		token.AccessProfiles = append([]string(nil), pins...)
+		if len(pins) == 1 {
+			token.ProfilePin = pins[0]
+		} else {
+			token.ProfilePin = ""
+		}
+		updated, err := json.Marshal(token)
+		if err != nil {
+			return fmt.Errorf("failed to marshal agent token: %w", err)
+		}
+		return bucket.Put(hash, updated)
+	})
+}
+
+// UpdateAgentToken updates mutable metadata while preserving the token hash,
+// secret prefix, creation time, usage time, and revocation state.
+func (m *Manager) UpdateAgentToken(name string, token auth.AgentToken) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.db.db.Update(func(tx *bbolt.Tx) error {
+		names, bucket := tx.Bucket([]byte(AgentTokenNamesBucket)), tx.Bucket([]byte(AgentTokensBucket))
+		if names == nil || bucket == nil {
+			return fmt.Errorf("agent token %q not found", name)
+		}
+		hash := names.Get([]byte(name))
+		if hash == nil || bucket.Get(hash) == nil {
+			return fmt.Errorf("agent token %q not found", name)
+		}
+		if name != token.Name && names.Get([]byte(token.Name)) != nil {
+			return fmt.Errorf("agent token with name %q already exists", token.Name)
+		}
+		data, err := json.Marshal(token)
+		if err != nil {
+			return err
+		}
+		if err := bucket.Put(hash, data); err != nil {
+			return err
+		}
+		if name != token.Name {
+			if err := names.Delete([]byte(name)); err != nil {
+				return err
+			}
+			if err := names.Put([]byte(token.Name), hash); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // GetAgentTokenByName retrieves an agent token by its name.
 // Returns nil if not found.
 func (m *Manager) GetAgentTokenByName(name string) (*auth.AgentToken, error) {

@@ -202,6 +202,8 @@ func (s *socketE2ETokenStore) ValidateAgentToken(rawToken string, _ []byte) (*au
 }
 
 func (s *socketE2ETokenStore) CreateAgentToken(auth.AgentToken, string, []byte) error { return nil }
+func (s *socketE2ETokenStore) UpdateAgentToken(string, auth.AgentToken) error         { return nil }
+func (s *socketE2ETokenStore) UpdateAgentTokenProfilePins(string, []string) error     { return nil }
 func (s *socketE2ETokenStore) ListAgentTokens() ([]auth.AgentToken, error)            { return nil, nil }
 func (s *socketE2ETokenStore) GetAgentTokenByName(string) (*auth.AgentToken, error) {
 	return nil, fmt.Errorf("not found")

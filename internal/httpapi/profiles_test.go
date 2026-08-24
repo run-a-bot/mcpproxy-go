@@ -40,7 +40,11 @@ func newProfilesTestServer() *Server {
 			{Name: "deploy-srv"},
 		},
 		Profiles: []config.ProfileConfig{
-			{Name: "research", Servers: []string{"research-srv"}},
+			{
+				Name:    "research",
+				Servers: []string{"research-srv"},
+				Tools:   map[string][]string{"research-srv": {"search"}},
+			},
 			{Name: "deploy", Servers: []string{"deploy-srv"}},
 		},
 	}
@@ -84,10 +88,12 @@ func TestHandleListProfiles(t *testing.T) {
 
 	research := byName["research"]
 	require.NotNil(t, research)
-	assert.EqualValues(t, 3, research["tool_count"])
+	assert.EqualValues(t, 1, research["tool_count"])
 	servers, _ := research["servers"].([]interface{})
 	require.Len(t, servers, 1)
 	assert.Equal(t, "research-srv", servers[0])
+	tools, _ := research["tools"].(map[string]interface{})
+	require.Len(t, tools["research-srv"], 1)
 
 	assert.EqualValues(t, 2, byName["deploy"]["tool_count"])
 }

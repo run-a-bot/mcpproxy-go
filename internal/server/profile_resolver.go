@@ -35,6 +35,27 @@ func profilePinFromContext(ctx context.Context) string {
 	return ""
 }
 
+func profilePinsFromContext(ctx context.Context) []string {
+	if ac := auth.AuthContextFromContext(ctx); ac != nil && ac.Type == auth.AuthTypeAgent {
+		if len(ac.AccessProfiles) > 0 {
+			return ac.AccessProfiles
+		}
+		if ac.ProfilePin != "" {
+			return []string{ac.ProfilePin}
+		}
+	}
+	return nil
+}
+
+func containsProfilePin(pins []string, slug string) bool {
+	for _, pin := range pins {
+		if pin == slug {
+			return true
+		}
+	}
+	return false
+}
+
 // currentConfig returns the live configuration snapshot (hot-reload safe),
 // falling back to the construction-time config if the runtime is unavailable.
 func (p *MCPProxyServer) currentConfig() *config.Config {
@@ -97,7 +118,7 @@ func (p *MCPProxyServer) profileScopeForSlug(slug string) *profile.ProfileScope 
 	}
 	for i := range cfg.Profiles {
 		if cfg.Profiles[i].Name == slug {
-			return profile.NewProfileScope(slug, cfg.Profiles[i].EffectiveServers(cfg))
+			return profile.NewProfileScopeWithTools(slug, cfg.Profiles[i].EffectiveServers(cfg), cfg.Profiles[i].Tools)
 		}
 	}
 	return nil
@@ -129,15 +150,21 @@ func (p *MCPProxyServer) resolveActiveProfile(ctx context.Context) (string, *pro
 	//    (internal/server/preflight_glue.go), which intersects an unresolvable
 	//    pin against an empty server set for the same reason, so the session and
 	//    preflight paths cannot disagree about what a pinned token may see.
-	if pin := profilePinFromContext(ctx); pin != "" {
-		if scope := p.profileScopeForSlug(pin); scope != nil {
-			return pin, scope
+	if pins := profilePinsFromContext(ctx); len(pins) > 0 {
+		var scopes []*profile.ProfileScope
+		for _, pin := range pins {
+			if scope := p.profileScopeForSlug(pin); scope != nil {
+				scopes = append(scopes, scope)
+			}
+		}
+		if len(scopes) > 0 {
+			return pins[0], profile.NewProfileScopeUnion(scopes...)
 		}
 		if p.logger != nil {
-			p.logger.Warn("agent-token profile_pin no longer matches any configured profile; resolving to a deny-all scope",
-				zap.String("profile_pin", pin))
+			p.logger.Warn("agent-token access_profiles no longer match any configured profile; resolving to a deny-all scope",
+				zap.Strings("access_profiles", pins))
 		}
-		return pin, profile.NewProfileScope(pin, nil)
+		return pins[0], profile.NewProfileScope(pins[0], nil)
 	}
 
 	// 2. Explicit URL profile (Spec 057). Authoritative for this request, so it

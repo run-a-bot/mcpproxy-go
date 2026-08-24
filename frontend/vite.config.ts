@@ -5,7 +5,8 @@ import { resolve } from 'path'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [vue()],
-  base: '/ui/',
+  // Relative assets let reverse proxies mount the dashboard below any prefix.
+  base: './',
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),

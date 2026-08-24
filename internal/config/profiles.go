@@ -10,8 +10,9 @@ import (
 // verbatim as the URL slug. Servers references mcpServers[].name; unknown names
 // warn-and-skip rather than fail (FR-015).
 type ProfileConfig struct {
-	Name    string   `json:"name"`    // URL slug, validated
-	Servers []string `json:"servers"` // references to mcpServers[].name
+	Name    string              `json:"name"`            // URL slug, validated
+	Servers []string            `json:"servers"`         // references to mcpServers[].name
+	Tools   map[string][]string `json:"tools,omitempty"` // optional server -> allowed tool names
 }
 
 // profileSlugPattern is the allowed profile-name form (FR-007): lowercase
@@ -81,6 +82,15 @@ func ValidateProfiles(cfg *Config) (warnings []string, err error) {
 		for _, srv := range p.Servers {
 			if _, ok := known[srv]; !ok {
 				warnings = append(warnings, fmt.Sprintf("profile %q references unknown server %q; it will be skipped", p.Name, srv))
+			}
+		}
+		profileServers := make(map[string]struct{}, len(p.Servers))
+		for _, srv := range p.Servers {
+			profileServers[srv] = struct{}{}
+		}
+		for srv := range p.Tools {
+			if _, ok := profileServers[srv]; !ok {
+				warnings = append(warnings, fmt.Sprintf("profile %q selects tools for server %q which is not in the profile; the selection will be ignored", p.Name, srv))
 			}
 		}
 	}

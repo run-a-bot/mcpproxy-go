@@ -870,6 +870,7 @@ export interface AgentTokenInfo {
   created_at: string
   last_used_at: string | null
   revoked: boolean
+  access_profiles?: string[]
 }
 
 export interface CreateAgentTokenRequest {
@@ -877,6 +878,7 @@ export interface CreateAgentTokenRequest {
   allowed_servers: string[]
   permissions: string[]
   expires_in?: string
+  access_profiles?: string[]
 }
 
 export interface CreateAgentTokenResponse {
@@ -886,6 +888,7 @@ export interface CreateAgentTokenResponse {
   permissions: string[]
   expires_at: string
   created_at: string
+  access_profiles?: string[]
 }
 
 // Import server configuration types
@@ -1041,6 +1044,7 @@ export interface OnboardingMarkRequest {
 export interface ProfileSummary {
   name: string
   servers: string[]
+  tools?: Record<string, string[]>
   tool_count: number
 }
 

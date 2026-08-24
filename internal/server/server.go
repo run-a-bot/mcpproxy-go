@@ -2219,11 +2219,12 @@ func (s *Server) profileMiddleware(next http.Handler) http.Handler {
 		// pinned profile. A request to any other /mcp/p/<slug> is forbidden (403),
 		// regardless of whether that slug is a real profile. Auth has already run
 		// (mcpAuthMiddleware wraps this handler), so the pin is on the context.
-		if pin := profilePinFromContext(r.Context()); pin != "" && pin != slug {
+		pins := profilePinsFromContext(r.Context())
+		if len(pins) > 0 && !containsProfilePin(pins, slug) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"error": fmt.Sprintf("agent token is pinned to profile '%s' and cannot access profile '%s'", pin, slug),
+				"error": fmt.Sprintf("agent token is pinned to profiles %v and cannot access profile '%s'", pins, slug),
 			})
 			return
 		}
@@ -2254,7 +2255,7 @@ func (s *Server) profileMiddleware(next http.Handler) http.Handler {
 
 		// Build scope from the effective server set (unknown-server warn-skip applied).
 		effectiveServers := found.EffectiveServers(cfg)
-		scope := profile.NewProfileScope(found.Name, effectiveServers)
+		scope := profile.NewProfileScopeWithTools(found.Name, effectiveServers, found.Tools)
 		ctx := profile.WithProfileScope(r.Context(), scope)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

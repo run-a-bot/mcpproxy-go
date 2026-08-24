@@ -937,6 +937,8 @@ func (s *Server) setupRoutes() {
 			r.Get("/", s.handleListTokens)
 			r.Route("/{name}", func(r chi.Router) {
 				r.Get("/", s.handleGetToken)
+				r.Patch("/", s.handleUpdateToken)
+				r.Patch("/access-profiles", s.handleUpdateTokenProfilePins)
 				r.Delete("/", s.handleRevokeToken)
 				r.Delete("/permanent", s.handleDeleteToken)
 				r.Post("/regenerate", s.handleRegenerateToken)

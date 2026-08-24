@@ -147,15 +147,31 @@ func (p *MCPProxyServer) evaluatePreflight(
 func (p *MCPProxyServer) resolvePreflightScope(params preflight.Params) (*preflight.Scope, error) {
 	inputs := preflight.ScopeInputs{TokenServers: params.TokenServers}
 
-	if pin := params.TokenProfilePin; pin != "" {
-		inputs.TokenPinName = pin
-		if scope := p.profileScopeForSlug(pin); scope != nil {
-			inputs.TokenPinServers = scope.AllowedServerNames()
+	pins := params.TokenProfilePins
+	if len(pins) == 0 && params.TokenProfilePin != "" {
+		pins = []string{params.TokenProfilePin}
+	}
+	if len(pins) > 0 {
+		inputs.TokenPinName = pins[0]
+		serverSet := map[string]struct{}{}
+		valid := false
+		for _, pin := range pins {
+			if scope := p.profileScopeForSlug(pin); scope != nil {
+				valid = true
+				for _, name := range scope.AllowedServerNames() {
+					serverSet[name] = struct{}{}
+				}
+			}
+		}
+		if valid {
+			for name := range serverSet {
+				inputs.TokenPinServers = append(inputs.TokenPinServers, name)
+			}
 		} else {
 			inputs.TokenPinServers = nil
 			if p.logger != nil {
 				p.logger.Warn("preflight: agent-token profile_pin no longer matches any configured profile; evaluating under a deny-all scope",
-					zap.String("profile_pin", pin))
+					zap.Strings("access_profiles", pins))
 			}
 		}
 	}

@@ -176,6 +176,28 @@ func TestManager_RebuildProfileFromShared_PreservesOutputSchema(t *testing.T) {
 	assert.Equal(t, outputSchema, results[0].Tool.OutputSchemaJSON, "output schema must survive profile rebuild (SearchTools)")
 }
 
+func TestManager_RebuildProfileFromSharedWithTools_FiltersTools(t *testing.T) {
+	m, err := NewManager(t.TempDir(), zap.NewNop())
+	require.NoError(t, err)
+	defer m.Close()
+	require.NoError(t, m.BatchIndexTools([]*config.ToolMetadata{
+		toolFor("github", "search"),
+		toolFor("github", "delete_repo"),
+	}))
+
+	require.NoError(t, m.RebuildProfileFromSharedWithTools(
+		"research",
+		[]string{"github"},
+		map[string][]string{"github": {"search"}},
+	))
+	profileIndex, err := m.ForProfile("research")
+	require.NoError(t, err)
+	tools, err := profileIndex.GetToolsByServer("github")
+	require.NoError(t, err)
+	require.Len(t, tools, 1)
+	assert.Equal(t, "github:search", tools[0].Name)
+}
+
 // TestManager_DropProfile_RemovesDir verifies that deleting a profile drops its
 // on-disk index directory and that a later ForProfile recreates it empty.
 func TestManager_DropProfile_RemovesDir(t *testing.T) {

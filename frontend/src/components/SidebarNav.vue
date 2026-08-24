@@ -271,6 +271,20 @@
                 <span v-show="!collapsed">Agent Tokens</span>
               </router-link>
             </li>
+            <li>
+              <router-link
+                to="/profiles"
+                :class="[
+                  { 'active': isActiveRoute('/profiles') },
+                  collapsed ? 'rounded-lg' : 'rounded-lg !pl-7 text-[13px] text-base-content/75',
+                ]"
+                :title="collapsed ? 'Profiles' : ''"
+                :aria-label="collapsed ? 'Profiles' : undefined"
+              >
+                <span class="text-base" :class="collapsed ? 'text-lg' : ''">◈</span>
+                <span v-show="!collapsed">Profiles</span>
+              </router-link>
+            </li>
           </ul>
 
           <!-- Section: Observability

@@ -1,6 +1,7 @@
 import type { APIResponse, Server, Tool, ToolApproval, SearchResult, StatusUpdate, SecretRef, MigrationAnalysis, ConfigSecretsResponse, GetToolCallsResponse, GetToolCallDetailResponse, GetServerToolCallsResponse, GetConfigResponse, ValidateConfigResponse, ConfigApplyResult, ServerTokenMetrics, GetRegistriesResponse, SearchRegistryServersResponse, RegistrySummary, GetSessionsResponse, GetSessionDetailResponse, InfoResponse, ActivityListResponse, ActivityDetailResponse, ActivitySummaryResponse, ImportResponse, AgentTokenInfo, CreateAgentTokenRequest, CreateAgentTokenResponse, RoutingInfo, ConnectStatusResponse, ClientStatus, ConnectResult, ConnectPreview, OnboardingStateResponse, OnboardingMarkRequest, DiagnosticFixResponse, GlobalToolsResponse, UsageAggregateResponse, UsageWindow, UsageSort, UsageStatus, ListProfilesResponse, ActiveProfileResponse } from '@/types'
 
 import { joinHoldEvidence, type HoldEvidenceSource } from '@/utils/holdEvidence'
+import { externalBasePath } from '@/utils/basePath'
 
 // Event types for API service
 export interface APIAuthEvent {
@@ -55,7 +56,7 @@ class APIService {
   constructor() {
     // In development, Vite proxy handles API calls
     // In production, the frontend is served from the same origin as the API
-    this.baseUrl = import.meta.env.DEV ? '' : ''
+    this.baseUrl = import.meta.env.DEV ? '' : externalBasePath()
 
     // Extract API key from URL parameters on initialization
     this.initializeAPIKey()
@@ -1122,6 +1123,17 @@ class APIService {
       method: 'POST',
       body: JSON.stringify(req),
     })
+  }
+
+  async updateAgentTokenProfile(name: string, profiles: string[]): Promise<APIResponse<AgentTokenInfo>> {
+    return this.request<AgentTokenInfo>(`/api/v1/tokens/${encodeURIComponent(name)}/access-profiles`, {
+      method: 'PATCH',
+      body: JSON.stringify({ access_profiles: profiles }),
+    })
+  }
+
+  async updateAgentToken(name: string, req: CreateAgentTokenRequest & { access_profiles: string[] }): Promise<APIResponse<AgentTokenInfo>> {
+    return this.request<AgentTokenInfo>(`/api/v1/tokens/${encodeURIComponent(name)}`, { method: 'PATCH', body: JSON.stringify(req) })
   }
 
   async revokeAgentToken(name: string): Promise<APIResponse<void>> {

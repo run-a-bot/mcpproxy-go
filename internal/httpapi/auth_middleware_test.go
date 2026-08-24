@@ -25,6 +25,8 @@ type testTokenStore struct {
 }
 
 func (s *testTokenStore) CreateAgentToken(_ auth.AgentToken, _ string, _ []byte) error { return nil }
+func (s *testTokenStore) UpdateAgentToken(string, auth.AgentToken) error               { return nil }
+func (s *testTokenStore) UpdateAgentTokenProfilePins(_ string, _ []string) error       { return nil }
 func (s *testTokenStore) ListAgentTokens() ([]auth.AgentToken, error)                  { return nil, nil }
 func (s *testTokenStore) GetAgentTokenByName(_ string) (*auth.AgentToken, error)       { return nil, nil }
 func (s *testTokenStore) RevokeAgentToken(_ string) error                              { return nil }

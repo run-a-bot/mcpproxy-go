@@ -1,8 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Dashboard from '@/views/Dashboard.vue'
+import { externalBasePath } from '@/utils/basePath'
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
+  history: createWebHistory(`${externalBasePath()}/ui/`),
   routes: [
     // Server edition auth routes
     {
@@ -151,6 +152,12 @@ const router = createRouter({
       meta: {
         title: 'Agent Tokens',
       },
+    },
+    {
+      path: '/profiles',
+      name: 'profiles',
+      component: () => import('@/views/Profiles.vue'),
+      meta: { title: 'Profiles' },
     },
     // Server edition user routes
     {

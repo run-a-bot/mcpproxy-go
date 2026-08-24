@@ -44,7 +44,22 @@ Each profile gets a permanent MCP endpoint:
   `server '<name>' is not in profile '<slug>'`
 - `upstream_servers list` at a profile URL excludes out-of-profile servers
 - `code_execution` at a profile URL runs with the profile-intersected server set
-- Per-server `enabled_tools`/`disabled_tools` continue to apply inside a profile (no profile-level tool overrides)
+- Optional profile `tools` maps server names to tool allowlists. Missing server
+  keys allow all tools on that profile server; an empty list denies all tools.
+  Per-server `enabled_tools`/`disabled_tools` still apply as an additional gate.
+
+```json
+{
+  "profiles": [{
+    "name": "research",
+    "servers": ["github", "web"],
+    "tools": {
+      "github": ["search_code", "get_issue"],
+      "web": []
+    }
+  }]
+}
+```
 
 ## Scope composition
 
@@ -97,6 +112,22 @@ For Web UI and tray surfaces:
 | `PUT /api/v1/profiles/active` | Set the default active profile. Body `{ "profile": "<slug>" }` (or `""` to clear). Unknown slug → `404`. |
 
 The REST "active profile" is a **server-level default for UI surfaces** — it is independent of, and does not override, a live MCP session's `set_profile` selection (which is per-session). All responses use the standard `{ "success", "data" }` envelope and require the API key.
+
+The Web UI's **Profiles** page loads the currently discovered tools for each enabled server and lets an operator select or clear individual tools before saving. The editor writes the same `profiles[].tools` configuration shown above and preserves profiles not currently being edited.
+
+Profiles can also be managed from the CLI:
+
+```bash
+mcpproxy profile list
+mcpproxy profile show readonly
+mcpproxy profile create --name readonly --servers github,docs \
+  --tools 'github=search_repositories,get_issue'
+mcpproxy profile update readonly --servers github \
+  --tools 'github=search_repositories'
+mcpproxy profile delete readonly
+```
+
+The CLI `--tools` format is `server=tool1,tool2;server2=tool3`. Omitting a server from the map allows all tools on that profile server; specifying `server=` denies all tools on it.
 
 ## Activity logging
 
