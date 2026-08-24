@@ -948,6 +948,48 @@
               </div>
             </div>
 
+            <div v-if="server.url" class="card bg-base-100 shadow-sm" data-test="oauth-client-card">
+              <div class="card-body py-4">
+                <h3 class="card-title text-base">OAuth client</h3>
+                <p class="text-sm text-base-content/60">
+                  Required when the provider does not support Dynamic Client Registration.
+                </p>
+                <div v-if="oauthCallbackURL" class="mt-2">
+                  <div class="text-xs text-base-content/60 mb-1">OAuth app callback URL</div>
+                  <code class="block bg-base-200 px-2 py-1.5 rounded text-xs break-all">{{ oauthCallbackURL }}</code>
+                </div>
+                <label class="form-control mt-2">
+                  <span class="label-text mb-1">Client ID</span>
+                  <input
+                    v-model="oauthClientID"
+                    type="text"
+                    class="input input-bordered input-sm"
+                    autocomplete="off"
+                  />
+                </label>
+                <label class="form-control mt-2">
+                  <span class="label-text mb-1">Client secret</span>
+                  <input
+                    v-model="oauthClientSecret"
+                    type="password"
+                    class="input input-bordered input-sm"
+                    autocomplete="new-password"
+                    placeholder="Leave empty to preserve the stored secret"
+                  />
+                </label>
+                <div class="card-actions justify-end mt-3">
+                  <button
+                    class="btn btn-sm btn-primary"
+                    :disabled="oauthCredentialsSaving || !oauthClientID.trim()"
+                    @click="saveOAuthCredentials"
+                  >
+                    <span v-if="oauthCredentialsSaving" class="loading loading-spinner loading-xs"></span>
+                    Save OAuth client
+                  </button>
+                </div>
+              </div>
+            </div>
+
             <!-- Process (stdio) -->
             <div v-if="server.command" class="card bg-base-100 shadow-sm">
               <div class="card-body py-4">
@@ -1565,6 +1607,7 @@ import { oauthSignInState } from '@/utils/health'
 import { computeToolDiffSections } from '@/utils/toolDiff'
 import { TRUST_MODES, type TrustMode } from '@/utils/trustMode'
 import { parseHoldEvidence } from '@/utils/holdEvidence'
+import { externalBasePath } from '@/utils/basePath'
 import {
   deriveQuarantineBannerState,
   type QuarantineBannerAction,
@@ -1629,6 +1672,17 @@ function mutateStoreServer(fn: (s: Server) => void) {
 }
 const activeTab = ref<'tools' | 'logs' | 'config' | 'security'>('tools')
 const actionLoading = ref(false)
+const oauthClientID = ref('')
+const oauthClientSecret = ref('')
+const oauthCredentialsSaving = ref(false)
+
+watch(
+  () => server.value?.oauth?.client_id,
+  (clientID) => {
+    oauthClientID.value = clientID || ''
+  },
+  { immediate: true },
+)
 
 // Tools
 const serverTools = ref<Tool[]>([])
@@ -1714,6 +1768,11 @@ const healthAction = computed(() => {
 // calm SignInPanel and the amber "Sign-in required" status badge.
 const signInState = computed(() => {
   return server.value ? oauthSignInState(server.value) : null
+})
+const oauthCallbackURL = computed(() => {
+  const prefix = externalBasePath()
+  if (!prefix || !server.value) return ''
+  return `${window.location.origin}${prefix}/oauth/callback/${encodeURIComponent(server.value.name)}`
 })
 
 // Audit F11: the badge speaks the same unified vocabulary as the Servers-page
@@ -3150,6 +3209,23 @@ async function patchServerDiff(patch: Record<string, unknown>, action: string): 
     return false
   } finally {
     kvPatchInFlight.value = false
+  }
+}
+
+async function saveOAuthCredentials() {
+  const clientID = oauthClientID.value.trim()
+  if (!clientID || oauthCredentialsSaving.value) return
+
+  const oauthPatch: Record<string, string> = { client_id: clientID }
+  if (oauthClientSecret.value) {
+    oauthPatch.client_secret = oauthClientSecret.value
+  }
+  oauthCredentialsSaving.value = true
+  try {
+    const saved = await patchServerDiff({ oauth: oauthPatch }, 'OAuth client saved')
+    if (saved) oauthClientSecret.value = ''
+  } finally {
+    oauthCredentialsSaving.value = false
   }
 }
 

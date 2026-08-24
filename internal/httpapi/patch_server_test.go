@@ -195,6 +195,40 @@ func TestHandlePatchServer_TrustMode(t *testing.T) {
 	})
 }
 
+func TestHandlePatchServer_OAuthClientCredentials(t *testing.T) {
+	logger := zap.NewNop().Sugar()
+	mockCtrl := &mockPatchServerController{
+		apiKey: "test-key",
+		existingServer: &config.ServerConfig{
+			Name:     "github",
+			URL:      "https://api.githubcopilot.com/mcp/",
+			Protocol: "streamable-http",
+			Enabled:  true,
+		},
+	}
+	srv := NewServer(mockCtrl, logger, nil)
+
+	body, err := json.Marshal(map[string]any{
+		"oauth": map[string]any{
+			"client_id":     "github-client-id",
+			"client_secret": "github-client-secret",
+		},
+	})
+	require.NoError(t, err)
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/servers/github", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", "test-key")
+	w := httptest.NewRecorder()
+
+	srv.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	require.NotNil(t, mockCtrl.capturedUpdates)
+	require.NotNil(t, mockCtrl.capturedUpdates.OAuth)
+	assert.Equal(t, "github-client-id", mockCtrl.capturedUpdates.OAuth.ClientID)
+	assert.Equal(t, "github-client-secret", mockCtrl.capturedUpdates.OAuth.ClientSecret)
+}
+
 // TestHandlePatchServer_HeadersDeepMerge verifies that PATCH /api/v1/servers
 // preserves existing header keys not mentioned in the request body. This is
 // the foundation of the Web UI / macOS tray edit flow: clients send a diff

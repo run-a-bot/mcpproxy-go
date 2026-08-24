@@ -109,3 +109,42 @@ Document dashboard TLS and mTLS configuration options.
 - When client verification is enabled, only certificates signed by the
   configured client CA are accepted.
 - Configuration hot reload and graceful shutdown handle the listener safely.
+
+### 3. Fix OAuth persistence and reverse-proxy login
+
+#### background
+
+OAuth settings changed through the management surface were not reliably
+retained, and login/callback handling needed to work when the dashboard was
+served through a reverse proxy. Persisting the settings and synchronizing the
+UI closes both deployment gaps.
+
+#### files
+
+##### internal/oauth/config.go (create)
+
+Persist OAuth configuration changes made through the management API so they
+survive reloads and restarts.
+
+##### internal/server/server.go (modify)
+
+Wire OAuth configuration updates into the server and preserve login behavior
+when MCPProxy is deployed behind a reverse proxy.
+
+##### internal/httpapi/server.go (modify)
+
+Expose the server-side OAuth update behavior through the management API.
+
+##### frontend/src/views/ServerDetail.vue (modify)
+
+Add the UI controls and feedback needed to update a server's OAuth settings.
+
+##### frontend/src/stores/servers.ts (modify)
+
+Keep the frontend server state synchronized after OAuth configuration changes.
+
+#### verify
+
+- OAuth configuration updates persist across server reloads.
+- Reverse-proxy deployments retain the correct login and callback behavior.
+- The server detail UI reflects successful OAuth updates.

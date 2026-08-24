@@ -30,6 +30,9 @@ const (
 	// validated where the operator types it, and internal/config cannot import
 	// this package.
 	DefaultRedirectPath = config.OAuthCallbackPath
+	// ExternalCallbackBaseEnv optionally exposes the OAuth callback through the
+	// main reverse-proxied HTTP server instead of the loopback callback port.
+	ExternalCallbackBaseEnv = "MCPPROXY_OAUTH_CALLBACK_BASE_URL"
 
 	// oauthLoggerName is the logger name every record in this package carries.
 	// Log filters and runbooks are written against it, so it is applied exactly
@@ -1386,6 +1389,18 @@ func (m *CallbackServerManager) StartCallbackServerOnHost(serverName string, bin
 	// JoinHostPort brackets an IPv6 literal, which is what the redirect URI
 	// needs too ("http://[::1]:PORT/oauth/callback").
 	redirectURI := fmt.Sprintf("http://%s%s", listenAddr, DefaultRedirectPath)
+	if externalBase := strings.TrimSpace(os.Getenv(ExternalCallbackBaseEnv)); externalBase != "" {
+		externalURL, parseErr := url.Parse(externalBase)
+		if parseErr != nil || externalURL.Host == "" ||
+			(externalURL.Scheme != "http" && externalURL.Scheme != "https") ||
+			externalURL.User != nil || externalURL.RawQuery != "" || externalURL.Fragment != "" {
+			_ = listener.Close()
+			return nil, fmt.Errorf("%s must be an HTTP(S) URL without credentials, query, or fragment", ExternalCallbackBaseEnv)
+		}
+		externalURL.Path = strings.TrimRight(externalURL.Path, "/") +
+			DefaultRedirectPath + "/" + url.PathEscape(serverName)
+		redirectURI = externalURL.String()
+	}
 
 	// Create HTTP server with dedicated mux
 	mux := http.NewServeMux()
@@ -1673,6 +1688,31 @@ func (m *CallbackServerManager) GetCallbackServer(serverName string) (*CallbackS
 // GetCallbackServer is a global helper to access callback servers
 func GetCallbackServer(serverName string) (*CallbackServer, bool) {
 	return globalCallbackManager.GetCallbackServer(serverName)
+}
+
+// HandleExternalCallback dispatches a reverse-proxied OAuth callback to the
+// callback server for the encoded upstream server name.
+func HandleExternalCallback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	escapedServerName := strings.TrimPrefix(r.URL.Path, DefaultRedirectPath+"/")
+	if escapedServerName == "" || strings.Contains(escapedServerName, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	serverName, err := url.PathUnescape(escapedServerName)
+	if err != nil || serverName == "" {
+		http.NotFound(w, r)
+		return
+	}
+	callbackServer, exists := GetCallbackServer(serverName)
+	if !exists {
+		http.NotFound(w, r)
+		return
+	}
+	callbackServer.handleCallback(w, r)
 }
 
 // StopCallbackServer stops and removes the callback server for a given server name

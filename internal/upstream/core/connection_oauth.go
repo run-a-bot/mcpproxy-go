@@ -1983,6 +1983,16 @@ func (c *Client) getAuthorizationURLQuick(ctx context.Context, oauthConfig *clie
 				zap.String("server", c.config.Name),
 				zap.String("correlation_id", correlationID),
 				zap.Error(regErr))
+
+			return "", nil, "", "", &contracts.OAuthFlowError{
+				Success:       false,
+				ErrorType:     contracts.OAuthErrorClientIDRequired,
+				ErrorCode:     contracts.OAuthCodeNoClientID,
+				ServerName:    c.config.Name,
+				CorrelationID: correlationID,
+				Message:       fmt.Sprintf("Server '%s' requires a client_id and Dynamic Client Registration failed: %v", c.config.Name, regErr),
+				Suggestion:    "Register an OAuth app with the provider and configure oauth.client_id and oauth.client_secret in the server config.",
+			}
 		} else {
 			c.logger.Info("✅ DCR succeeded",
 				zap.String("server", c.config.Name),
