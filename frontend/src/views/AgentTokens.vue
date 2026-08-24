@@ -122,6 +122,7 @@
             <th>Name</th>
             <th>Prefix</th>
             <th>Servers</th>
+            <th>Profile</th>
             <th>Permissions</th>
             <th>Expires</th>
             <th>Last Used</th>
@@ -145,6 +146,12 @@
                   {{ server }}
                 </span>
               </div>
+            </td>
+            <td>
+              <span v-if="token.profile_pin" class="badge badge-primary badge-outline badge-sm">
+                {{ token.profile_pin }}
+              </span>
+              <span v-else class="text-base-content/40 text-sm">No profile pin</span>
             </td>
             <td>
               <div class="flex flex-wrap gap-1">
@@ -262,6 +269,25 @@
             <label class="label" v-else>
               <span class="label-text-alt">Alphanumeric, hyphens, and underscores only</span>
             </label>
+          </div>
+
+          <!-- Profile scope -->
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Profile scope</span>
+            </label>
+            <select v-model="createForm.profilePin" class="select select-bordered w-full" data-test="token-profile-pin">
+              <option value="">No profile restriction</option>
+              <option v-for="profile in profilesStore.profiles" :key="profile.name" :value="profile.name">
+                {{ profile.name }} ({{ profile.servers.length }} {{ profile.servers.length === 1 ? 'server' : 'servers' }}, {{ profile.tool_count }} tools)
+              </option>
+            </select>
+            <label class="label">
+              <span class="label-text-alt text-base-content/60">A pinned token can only discover and call tools from this profile's servers. Configure profiles in Configuration → Raw JSON.</span>
+            </label>
+            <div v-if="profilesStore.loaded && !profilesStore.hasProfiles" class="text-xs text-base-content/50">
+              No profiles are configured yet. Add a <code>profiles</code> block in Configuration.
+            </div>
           </div>
 
           <!-- Allowed Servers -->
@@ -382,10 +408,12 @@ import apiClient from '@/services/api'
 import { formatDateTimeShort } from '@/utils/datetime'
 import { useSystemStore } from '@/stores/system'
 import { useServersStore } from '@/stores/servers'
+import { useProfilesStore } from '@/stores/profiles'
 import type { AgentTokenInfo, Server } from '@/types'
 
 const systemStore = useSystemStore()
 const serversStore = useServersStore()
+const profilesStore = useProfilesStore()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -403,6 +431,7 @@ const createForm = ref({
   permWrite: false,
   permDestructive: false,
   expiresIn: '720h',
+  profilePin: '',
 })
 
 const createFormErrors = ref<{ name?: string; servers?: string }>({})
@@ -502,6 +531,7 @@ function openCreateDialog() {
     permWrite: false,
     permDestructive: false,
     expiresIn: '720h',
+    profilePin: '',
   }
   createFormErrors.value = {}
   // Ensure servers are loaded for the checkbox list
@@ -552,6 +582,7 @@ async function handleCreate() {
       allowed_servers: allowedServers,
       permissions,
       expires_in: createForm.value.expiresIn,
+      ...(createForm.value.profilePin ? { profile_pin: createForm.value.profilePin } : {}),
     })
 
     if (response.success && response.data) {
@@ -708,5 +739,6 @@ function dismissTokenSecret() {
 onMounted(async () => {
   await new Promise(resolve => setTimeout(resolve, 100))
   loadTokens()
+  void profilesStore.fetchProfiles()
 })
 </script>

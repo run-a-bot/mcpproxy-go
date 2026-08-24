@@ -1,6 +1,7 @@
 import type { APIResponse, Server, Tool, ToolApproval, SearchResult, StatusUpdate, SecretRef, MigrationAnalysis, ConfigSecretsResponse, GetToolCallsResponse, GetToolCallDetailResponse, GetServerToolCallsResponse, GetConfigResponse, ValidateConfigResponse, ConfigApplyResult, ServerTokenMetrics, GetRegistriesResponse, SearchRegistryServersResponse, RegistrySummary, GetSessionsResponse, GetSessionDetailResponse, InfoResponse, ActivityListResponse, ActivityDetailResponse, ActivitySummaryResponse, ImportResponse, AgentTokenInfo, CreateAgentTokenRequest, CreateAgentTokenResponse, RoutingInfo, ConnectStatusResponse, ClientStatus, ConnectResult, ConnectPreview, OnboardingStateResponse, OnboardingMarkRequest, DiagnosticFixResponse, GlobalToolsResponse, UsageAggregateResponse, UsageWindow, UsageSort, UsageStatus, ListProfilesResponse, ActiveProfileResponse } from '@/types'
 
 import { joinHoldEvidence, type HoldEvidenceSource } from '@/utils/holdEvidence'
+import { externalBasePath } from '@/utils/basePath'
 
 // Event types for API service
 export interface APIAuthEvent {
@@ -55,7 +56,7 @@ class APIService {
   constructor() {
     // In development, Vite proxy handles API calls
     // In production, the frontend is served from the same origin as the API
-    this.baseUrl = import.meta.env.DEV ? '' : ''
+    this.baseUrl = import.meta.env.DEV ? '' : externalBasePath()
 
     // Extract API key from URL parameters on initialization
     this.initializeAPIKey()

@@ -2254,7 +2254,7 @@ func (s *Server) profileMiddleware(next http.Handler) http.Handler {
 
 		// Build scope from the effective server set (unknown-server warn-skip applied).
 		effectiveServers := found.EffectiveServers(cfg)
-		scope := profile.NewProfileScope(found.Name, effectiveServers)
+		scope := profile.NewProfileScopeWithTools(found.Name, effectiveServers, found.Tools)
 		ctx := profile.WithProfileScope(r.Context(), scope)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

@@ -11,6 +11,7 @@ import (
 
 	"github.com/smart-mcp-proxy/mcpproxy-go/internal/auth"
 	"github.com/smart-mcp-proxy/mcpproxy-go/internal/config"
+	"github.com/smart-mcp-proxy/mcpproxy-go/internal/profile"
 	"github.com/smart-mcp-proxy/mcpproxy-go/internal/storage"
 )
 
@@ -146,6 +147,41 @@ func TestDirectToolCallabilityBlock_ApprovedToolAllowed(t *testing.T) {
 
 	result := proxy.directToolCallabilityBlock(context.Background(), "github", "list_repos", map[string]interface{}{})
 	assert.Nil(t, result)
+}
+
+func TestDirectToolProfileBlock_ToolSelection(t *testing.T) {
+	proxy := createTestMCPProxyServer(t)
+	ctx := profile.WithProfileScope(context.Background(), profile.NewProfileScopeWithTools(
+		"research",
+		[]string{"github"},
+		map[string][]string{"github": {"list_repos"}},
+	))
+
+	assert.Nil(t, proxy.directToolProfileBlock(ctx, "github", "list_repos"))
+	result := proxy.directToolProfileBlock(ctx, "github", "delete_repo")
+	require.NotNil(t, result)
+	assert.True(t, result.IsError)
+	assert.Contains(t, result.Content[0].(mcp.TextContent).Text, "not enabled in profile 'research'")
+}
+
+func TestFilterDirectToolsForAgentCallability_ProfileToolSelection(t *testing.T) {
+	proxy := createTestMCPProxyServer(t)
+	proxy.publishDirectCatalog(buildDirectCatalog([]*config.ToolMetadata{
+		{ServerName: "github", Name: "list_repos"},
+		{ServerName: "github", Name: "delete_repo"},
+	}, nil))
+	ctx := profile.WithProfileScope(context.Background(), profile.NewProfileScopeWithTools(
+		"research",
+		[]string{"github"},
+		map[string][]string{"github": {"list_repos"}},
+	))
+	tools := []mcp.Tool{
+		{Name: FormatDirectToolName("github", "list_repos")},
+		{Name: FormatDirectToolName("github", "delete_repo")},
+	}
+
+	filtered := proxy.filterDirectToolsForAgentCallability(ctx, tools)
+	assert.Equal(t, []string{FormatDirectToolName("github", "list_repos")}, directCallabilityToolNamesForTest(filtered))
 }
 
 func TestFilterDirectToolsForAgentCallability_AgentOnly(t *testing.T) {

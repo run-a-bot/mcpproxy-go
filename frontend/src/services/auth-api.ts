@@ -1,5 +1,7 @@
 // Auth API client for server edition
-const API_BASE = '/api/v1'
+import { externalBasePath } from '@/utils/basePath'
+
+const API_BASE = `${externalBasePath()}/api/v1`
 
 export interface UserProfile {
   id: string

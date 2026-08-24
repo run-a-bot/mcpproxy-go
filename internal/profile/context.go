@@ -23,6 +23,7 @@ type ProfileScope struct {
 	// servers is the effective set after unknown-server warn-skip. A non-nil but
 	// empty set is a legal "deny everything" profile.
 	servers map[string]struct{}
+	tools   map[string]map[string]struct{}
 }
 
 // NewProfileScope builds a scope for the named profile over the given effective
@@ -34,6 +35,23 @@ func NewProfileScope(name string, servers []string) *ProfileScope {
 		set[s] = struct{}{}
 	}
 	return &ProfileScope{Name: name, servers: set}
+}
+
+// NewProfileScopeWithTools builds a server scope plus optional per-server tool allowlists.
+func NewProfileScopeWithTools(name string, servers []string, tools map[string][]string) *ProfileScope {
+	scope := NewProfileScope(name, servers)
+	if tools == nil {
+		return scope
+	}
+	scope.tools = make(map[string]map[string]struct{}, len(tools))
+	for server, names := range tools {
+		allowed := make(map[string]struct{}, len(names))
+		for _, tool := range names {
+			allowed[tool] = struct{}{}
+		}
+		scope.tools[server] = allowed
+	}
+	return scope
 }
 
 // Allows reports whether the named server is visible under this scope.
@@ -63,6 +81,22 @@ func (p *ProfileScope) Allows(serverName string) bool {
 // results anyway.
 func (p *ProfileScope) DeniesAll() bool {
 	return p != nil && len(p.servers) == 0
+}
+
+// AllowsTool applies server membership plus optional per-server tool selection.
+func (p *ProfileScope) AllowsTool(serverName, toolName string) bool {
+	if p == nil {
+		return true
+	}
+	if !p.Allows(serverName) || toolName == "" {
+		return false
+	}
+	allowed, restricted := p.tools[serverName]
+	if !restricted {
+		return true
+	}
+	_, ok := allowed[toolName]
+	return ok
 }
 
 // AllowedServerNames returns the list of server names in this profile scope.

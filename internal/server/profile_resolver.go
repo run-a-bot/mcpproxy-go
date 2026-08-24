@@ -97,7 +97,7 @@ func (p *MCPProxyServer) profileScopeForSlug(slug string) *profile.ProfileScope 
 	}
 	for i := range cfg.Profiles {
 		if cfg.Profiles[i].Name == slug {
-			return profile.NewProfileScope(slug, cfg.Profiles[i].EffectiveServers(cfg))
+			return profile.NewProfileScopeWithTools(slug, cfg.Profiles[i].EffectiveServers(cfg), cfg.Profiles[i].Tools)
 		}
 	}
 	return nil

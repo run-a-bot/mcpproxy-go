@@ -456,6 +456,11 @@ func (p *MCPProxyServer) makeDirectModeHandler(entry *directCatalogEntry) mcpser
 		args := request.GetArguments()
 		enrichedArgs := injectAuthMetadata(ctx, args)
 
+		if blocked := p.directToolProfileBlock(ctx, serverName, toolName); blocked != nil {
+			p.emitActivityPolicyDecision(serverName, toolName, sessionID, requestID, "blocked", "direct tool is outside active profile", telemetry.BlockReasonProfileScope)
+			return blocked, nil
+		}
+
 		// Enforce direct-mode callability before emitting a tool-started event or
 		// invoking upstream. Direct mode must not bypass disabled, quarantine, or
 		// approval controls enforced by call_tool_* variants.
