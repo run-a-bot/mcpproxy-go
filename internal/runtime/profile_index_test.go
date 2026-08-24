@@ -82,6 +82,48 @@ func TestReconcileProfileIndexes_BuildsAndIsolates(t *testing.T) {
 	assert.Equal(t, uint64(3), profileDocCount(t, mgr, "beta"), "beta doc-count must be unchanged")
 }
 
+func TestReconcileProfileIndexes_AppliesPerServerToolSelection(t *testing.T) {
+	cfg := &config.Config{
+		Servers: []*config.ServerConfig{{Name: "s1"}},
+		Profiles: []config.ProfileConfig{{
+			Name:    "limited",
+			Servers: []string{"s1"},
+			Tools:   map[string][]string{"s1": {"a"}},
+		}},
+	}
+	r, mgr := newProfileTestRuntime(t, cfg)
+	require.NoError(t, mgr.BatchIndexTools([]*config.ToolMetadata{
+		toolMeta("s1", "a"), toolMeta("s1", "b"),
+	}))
+
+	r.reconcileProfileIndexes()
+	assertProfileTools(t, mgr, "limited", []string{"s1:a"})
+
+	// Changing the allowlist must rebuild the existing profile index rather than
+	// leaving the previous selection cached.
+	cfg.Profiles[0].Tools = map[string][]string{"s1": {"b"}}
+	r.reconcileProfileIndexes()
+	assertProfileTools(t, mgr, "limited", []string{"s1:b"})
+
+	// Removing the server's tool rule restores the documented allow-all behavior.
+	cfg.Profiles[0].Tools = nil
+	r.reconcileProfileIndexes()
+	assertProfileTools(t, mgr, "limited", []string{"s1:a", "s1:b"})
+}
+
+func assertProfileTools(t *testing.T, mgr *index.Manager, slug string, want []string) {
+	t.Helper()
+	pm, err := mgr.ForProfile(slug)
+	require.NoError(t, err)
+	tools, err := pm.GetToolsByServer("s1")
+	require.NoError(t, err)
+	got := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		got = append(got, tool.Name)
+	}
+	assert.ElementsMatch(t, want, got)
+}
+
 func TestReconcileProfileIndexes_DropsRemovedProfile(t *testing.T) {
 	cfg := &config.Config{
 		Servers: []*config.ServerConfig{{Name: "s1"}},

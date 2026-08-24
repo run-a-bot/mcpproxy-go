@@ -63,3 +63,23 @@ func TestProfileScope_ContextRoundTrip(t *testing.T) {
 		t.Error("round-tripped scope lost its membership set")
 	}
 }
+
+func TestProfileScope_AllowsTool(t *testing.T) {
+	scope := NewProfileScopeWithTools("research", []string{"github", "web", "plain"}, map[string][]string{
+		"github": {"search", "get_issue"},
+		"web":    {},
+	})
+
+	if !scope.AllowsTool("github", "search") {
+		t.Fatal("configured tool must be allowed")
+	}
+	if scope.AllowsTool("github", "delete_repo") {
+		t.Fatal("unconfigured tool must be denied")
+	}
+	if scope.AllowsTool("web", "fetch") {
+		t.Fatal("empty tool list must deny every tool on that server")
+	}
+	if !scope.AllowsTool("plain", "anything") {
+		t.Fatal("server without a tool rule must retain allow-all tool behavior")
+	}
+}

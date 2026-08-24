@@ -15,6 +15,7 @@ import (
 	"github.com/smart-mcp-proxy/mcpproxy-go/internal/config"
 	"github.com/smart-mcp-proxy/mcpproxy-go/internal/contracts"
 	"github.com/smart-mcp-proxy/mcpproxy-go/internal/jsruntime"
+	"github.com/smart-mcp-proxy/mcpproxy-go/internal/profile"
 	"github.com/smart-mcp-proxy/mcpproxy-go/internal/reqcontext"
 	"github.com/smart-mcp-proxy/mcpproxy-go/internal/storage"
 	"github.com/smart-mcp-proxy/mcpproxy-go/internal/upstream"
@@ -176,6 +177,7 @@ func (p *MCPProxyServer) handleCodeExecution(ctx context.Context, request mcp.Ca
 	configPath := p.activeConfigFilePath()
 
 	// Create tool caller adapter that wraps the upstream manager
+	_, activeProfileScope := p.resolveActiveProfile(ctx)
 	toolCaller := &upstreamToolCaller{
 		upstreamManager: p.upstreamManager,
 		logger:          p.logger,
@@ -188,6 +190,7 @@ func (p *MCPProxyServer) handleCodeExecution(ctx context.Context, request mcp.Ca
 		clientVersion:   clientVersion,
 		mainServer:      p.mainServer,
 		proxy:           p,
+		profileScope:    activeProfileScope,
 	}
 
 	// Log pool metrics before acquisition
@@ -683,12 +686,16 @@ type upstreamToolCaller struct {
 	// proxy is the policy authority for the shared dispatch gates (Spec 098
 	// FR-002). nil in unit tests that drive the caller directly, in which case
 	// the gate is skipped exactly as it was before the consolidation.
-	proxy *MCPProxyServer
+	proxy        *MCPProxyServer
+	profileScope *profile.ProfileScope
 }
 
 // CallTool implements jsruntime.ToolCaller interface
 func (u *upstreamToolCaller) CallTool(ctx context.Context, serverName, toolName string, args map[string]interface{}) (interface{}, error) {
 	startTime := time.Now()
+	if !u.profileScope.AllowsTool(serverName, toolName) {
+		return nil, fmt.Errorf("tool %q is not enabled in profile %q", serverName+":"+toolName, u.profileScope.Name)
+	}
 
 	// Spec 093 FR-012: a call issued by a sandboxed script is an INTERNAL origin,
 	// whatever surface asked for the code_execution around it. Without this the

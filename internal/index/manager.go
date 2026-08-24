@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/smart-mcp-proxy/mcpproxy-go/internal/config"
@@ -249,6 +250,15 @@ func (m *Manager) ClearAll() error {
 // isolation). Servers with no indexed tools contribute nothing; an empty server
 // list yields an empty profile index.
 func (m *Manager) RebuildProfileFromShared(slug string, servers []string) error {
+	return m.RebuildProfileFromSharedWithTools(slug, servers, nil)
+}
+
+// RebuildProfileFromSharedWithTools applies optional per-server tool allowlists.
+func (m *Manager) RebuildProfileFromSharedWithTools(
+	slug string,
+	servers []string,
+	selected map[string][]string,
+) error {
 	pm, err := m.ForProfile(slug)
 	if err != nil {
 		return err
@@ -264,7 +274,21 @@ func (m *Manager) RebuildProfileFromShared(slug string, servers []string) error 
 		if err != nil {
 			return fmt.Errorf("failed to read shared index for server %q: %w", srv, err)
 		}
-		tools = append(tools, srvTools...)
+		names, restricted := selected[srv]
+		if !restricted {
+			tools = append(tools, srvTools...)
+			continue
+		}
+		allowed := make(map[string]struct{}, len(names))
+		for _, name := range names {
+			allowed[name] = struct{}{}
+		}
+		for _, tool := range srvTools {
+			name := strings.TrimPrefix(tool.Name, srv+":")
+			if _, ok := allowed[name]; ok {
+				tools = append(tools, tool)
+			}
+		}
 	}
 
 	if len(tools) == 0 {

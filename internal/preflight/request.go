@@ -52,7 +52,8 @@ type Params struct {
 	// TokenProfilePin is the profile an agent token is pinned to, propagated
 	// through REST auth (Spec 057 / review finding 11). It can only narrow the
 	// evaluation scope, never widen it.
-	TokenProfilePin string
+	TokenProfilePin  string
+	TokenProfilePins []string
 	// Filters are the caller's annotation policy filters (spec 094 semantics).
 	Filters toolannotations.Filters
 }

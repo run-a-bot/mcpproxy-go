@@ -1,10 +1,40 @@
 package runtime
 
 import (
+	"sort"
+	"strings"
+
 	"github.com/smart-mcp-proxy/mcpproxy-go/internal/config"
 
 	"go.uber.org/zap"
 )
+
+func profileTools(cfg *config.Config, name string) map[string][]string {
+	if cfg == nil {
+		return nil
+	}
+	for i := range cfg.Profiles {
+		if cfg.Profiles[i].Name == name {
+			return cfg.Profiles[i].Tools
+		}
+	}
+	return nil
+}
+
+func profileMembershipSignature(servers []string, tools map[string][]string) []string {
+	signature := append([]string(nil), servers...)
+	keys := make([]string, 0, len(tools))
+	for server := range tools {
+		keys = append(keys, server)
+	}
+	sort.Strings(keys)
+	for _, server := range keys {
+		names := append([]string(nil), tools[server]...)
+		sort.Strings(names)
+		signature = append(signature, "\x00"+server+"="+strings.Join(names, "\x00"))
+	}
+	return signature
+}
 
 // profileEffectiveServers builds the desired profile -> effective-server-set map
 // from the current config. Each profile's server list is filtered to servers that
@@ -41,14 +71,15 @@ func (r *Runtime) reindexAffectedProfiles(serverName string) {
 		if !containsString(servers, serverName) {
 			continue
 		}
-		if err := r.indexManager.RebuildProfileFromShared(name, servers); err != nil {
+		tools := profileTools(r.Config(), name)
+		if err := r.indexManager.RebuildProfileFromSharedWithTools(name, servers, tools); err != nil {
 			r.logger.Error("Failed to rebuild per-profile index",
 				zap.String("profile", name),
 				zap.String("trigger_server", serverName),
 				zap.Error(err))
 			continue
 		}
-		r.profileMembership[name] = servers
+		r.profileMembership[name] = profileMembershipSignature(servers, tools)
 	}
 }
 
@@ -69,16 +100,18 @@ func (r *Runtime) reconcileProfileIndexes() {
 
 	// Build or rebuild new / changed profiles; leave unchanged ones untouched.
 	for name, servers := range desired {
-		if prev, existed := r.profileMembership[name]; existed && stringSlicesEqual(prev, servers) {
+		tools := profileTools(r.Config(), name)
+		signature := profileMembershipSignature(servers, tools)
+		if prev, existed := r.profileMembership[name]; existed && stringSlicesEqual(prev, signature) {
 			continue
 		}
-		if err := r.indexManager.RebuildProfileFromShared(name, servers); err != nil {
+		if err := r.indexManager.RebuildProfileFromSharedWithTools(name, servers, tools); err != nil {
 			r.logger.Error("Failed to (re)build per-profile index",
 				zap.String("profile", name),
 				zap.Error(err))
 			continue
 		}
-		r.profileMembership[name] = servers
+		r.profileMembership[name] = signature
 	}
 
 	// Drop profiles no longer present in config — both those we tracked this run

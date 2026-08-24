@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -119,5 +120,24 @@ func TestProfilesRoundTrip(t *testing.T) {
 	}
 	if len(back.Profiles) != 1 || back.Profiles[0].Name != "research" || len(back.Profiles[0].Servers) != 2 {
 		t.Errorf("profiles did not round-trip losslessly: %+v", back.Profiles)
+	}
+}
+
+func TestProfilesToolSelectionRoundTrip(t *testing.T) {
+	cfg := &Config{Profiles: []ProfileConfig{{
+		Name:    "research",
+		Servers: []string{"github"},
+		Tools:   map[string][]string{"github": {"search", "get_issue"}},
+	}}}
+	b, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back Config
+	if err := json.Unmarshal(b, &back); err != nil {
+		t.Fatal(err)
+	}
+	if got := back.Profiles[0].Tools["github"]; !reflect.DeepEqual(got, []string{"search", "get_issue"}) {
+		t.Fatalf("profile tools did not round-trip: %v", got)
 	}
 }

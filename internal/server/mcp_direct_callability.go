@@ -52,7 +52,8 @@ func (p *MCPProxyServer) filterDirectToolsForAgentCallability(ctx context.Contex
 	}
 
 	authCtx := auth.AuthContextFromContext(ctx)
-	if authCtx == nil || authCtx.Type != auth.AuthTypeAgent {
+	_, profileScope := p.resolveActiveProfile(ctx)
+	if profileScope == nil && (authCtx == nil || authCtx.Type != auth.AuthTypeAgent) {
 		return tools
 	}
 
@@ -83,7 +84,8 @@ func (p *MCPProxyServer) filterDirectToolsForAgentCallability(ctx context.Contex
 			serverName, toolName = entry.ServerName, entry.ToolName
 		}
 
-		if evaluator.evaluate(serverName, toolName).callable {
+		if profileScope.AllowsTool(serverName, toolName) &&
+			(authCtx == nil || authCtx.Type != auth.AuthTypeAgent || evaluator.evaluate(serverName, toolName).callable) {
 			filtered = append(filtered, tool)
 		}
 	}
@@ -107,6 +109,15 @@ func (p *MCPProxyServer) directEntryCallable(authCtx *auth.AuthContext, entry *d
 		return true
 	}
 	return newDirectCallabilityEvaluator(p).evaluate(entry.ServerName, entry.ToolName).callable
+}
+
+// directToolProfileBlock rejects calls to tools outside the active profile.
+func (p *MCPProxyServer) directToolProfileBlock(ctx context.Context, serverName, toolName string) *mcp.CallToolResult {
+	_, scope := p.resolveActiveProfile(ctx)
+	if scope == nil || scope.AllowsTool(serverName, toolName) {
+		return nil
+	}
+	return mcp.NewToolResultError("Tool is not enabled in profile '" + scope.Name + "'")
 }
 
 // directToolCallabilityBlock returns a policy response when a direct-mode tool

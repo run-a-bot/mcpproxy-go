@@ -250,6 +250,87 @@ func claimAgentTokenNameSlot(tx *bbolt.Tx, nameBucket *bbolt.Bucket, name string
 	return tokenBucket.Get(indexed) == nil
 }
 
+// UpdateAgentTokenProfilePins changes the profile restrictions without changing
+// the token secret or any other token metadata.
+func (m *Manager) UpdateAgentTokenProfilePins(name string, pins []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.db.db.Update(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(AgentTokensBucket))
+		if bucket == nil {
+			return fmt.Errorf("agent token %q not found", name)
+		}
+		hash, token, err := m.findAgentTokenHashLocked(tx, "", name)
+		if err != nil {
+			return err
+		}
+		if token == nil {
+			return fmt.Errorf("agent token %q not found", name)
+		}
+		token.AccessProfiles = append([]string(nil), pins...)
+		if len(pins) == 1 {
+			token.ProfilePin = pins[0]
+		} else {
+			token.ProfilePin = ""
+		}
+		updated, err := json.Marshal(token)
+		if err != nil {
+			return fmt.Errorf("failed to marshal agent token: %w", err)
+		}
+		return bucket.Put(hash, updated)
+	})
+}
+
+// UpdateAgentToken updates mutable metadata while preserving the token hash,
+// secret prefix, creation time, usage time, and revocation state.
+func (m *Manager) UpdateAgentToken(name string, token auth.AgentToken) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.db.db.Update(func(tx *bbolt.Tx) error {
+		names := tx.Bucket([]byte(AgentTokenNamesBucket))
+		bucket := tx.Bucket([]byte(AgentTokensBucket))
+		if names == nil || bucket == nil {
+			return fmt.Errorf("agent token %q not found", name)
+		}
+		hash, old, err := m.findAgentTokenHashLocked(tx, "", name)
+		if err != nil {
+			return err
+		}
+		if old == nil {
+			return fmt.Errorf("agent token %q not found", name)
+		}
+		if name != token.Name {
+			_, existing, err := m.findAgentTokenHashLocked(tx, "", token.Name)
+			if err != nil {
+				return err
+			}
+			if existing != nil {
+				return fmt.Errorf("agent token with name %q already exists", token.Name)
+			}
+		}
+		data, err := json.Marshal(token)
+		if err != nil {
+			return err
+		}
+		if err := bucket.Put(hash, data); err != nil {
+			return err
+		}
+		if name != token.Name {
+			if indexed := names.Get([]byte(name)); indexed != nil && string(indexed) == string(hash) {
+				if err := names.Delete([]byte(name)); err != nil {
+					return err
+				}
+			}
+			if claimAgentTokenNameSlot(tx, names, token.Name) {
+				if err := names.Put([]byte(token.Name), hash); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+}
+
 // GetAgentTokenByName retrieves an OWNERLESS agent token by its name — that
 // is, GetAgentTokenByOwnerAndName("", name). Every personal-edition token is
 // ownerless, so this is unchanged for the personal edition; it deliberately

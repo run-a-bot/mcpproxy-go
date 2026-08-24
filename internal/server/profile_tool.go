@@ -60,9 +60,18 @@ func (p *MCPProxyServer) handleSetProfile(ctx context.Context, request mcp.CallT
 
 	// Profiles v2 T3: a profile-pinned agent token may not switch away from its
 	// pinned profile.
-	pin := profilePinFromContext(ctx)
-	if pin != "" && slug != "" && slug != pin {
-		return mcp.NewToolResultError(fmt.Sprintf("agent token is pinned to profile '%s' and cannot switch to '%s'", pin, slug)), nil
+	pins := profilePinsFromContext(ctx)
+	if len(pins) > 0 && slug != "" {
+		allowed := false
+		for _, candidate := range pins {
+			if candidate == slug {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return mcp.NewToolResultError(fmt.Sprintf("agent token is pinned to profiles %v and cannot switch to '%s'", pins, slug)), nil
+		}
 	}
 
 	// Empty slug clears the session selection (back to all servers).
@@ -73,7 +82,7 @@ func (p *MCPProxyServer) handleSetProfile(ctx context.Context, request mcp.CallT
 		// reach — the pin's servers, or NOTHING when the pinned profile has been
 		// deleted — instead of the full server list, which would advertise a
 		// reach the resolver denies.
-		if pin != "" {
+		if len(pins) > 0 {
 			pinnedName, pinnedScope := p.resolveActiveProfile(ctx)
 			return setProfileResult(pinnedName, pinnedScope.AllowedServerNames())
 		}

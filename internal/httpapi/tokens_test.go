@@ -46,6 +46,8 @@ func (m *mockTokenStore) CreateAgentToken(token auth.AgentToken, _ string, _ []b
 	m.tokens[token.Name] = token
 	return nil
 }
+func (m *mockTokenStore) UpdateAgentToken(string, auth.AgentToken) error         { return nil }
+func (m *mockTokenStore) UpdateAgentTokenProfilePins(_ string, _ []string) error { return nil }
 
 func (m *mockTokenStore) ListAgentTokens() ([]auth.AgentToken, error) {
 	result := make([]auth.AgentToken, 0, len(m.tokens))

@@ -18,11 +18,11 @@ import (
 
 var (
 	// token create flags
-	tokenName        string
-	tokenServers     string
-	tokenPermissions string
-	tokenExpires     string
-	tokenProfilePin  string
+	tokenName           string
+	tokenServers        string
+	tokenPermissions    string
+	tokenExpires        string
+	tokenAccessProfiles string
 
 	// tokenConfigPath is the token command's --config override (GH #897).
 	tokenConfigPath string
@@ -43,6 +43,7 @@ Examples:
   mcpproxy token create --name deploy-bot --servers github,gitlab --permissions read,write
   mcpproxy token list
   mcpproxy token show deploy-bot
+  mcpproxy token update-access-profiles deploy-bot --access-profiles readonly,production
   mcpproxy token revoke deploy-bot`,
 	}
 
@@ -52,6 +53,7 @@ Examples:
 	tokenCmd.AddCommand(newTokenCreateCmd())
 	tokenCmd.AddCommand(newTokenListCmd())
 	tokenCmd.AddCommand(newTokenShowCmd())
+	tokenCmd.AddCommand(newTokenUpdateAccessProfilesCmd())
 	tokenCmd.AddCommand(newTokenRevokeCmd())
 	tokenCmd.AddCommand(newTokenDeleteCmd())
 	tokenCmd.AddCommand(newTokenRegenerateCmd())
@@ -71,7 +73,7 @@ Store it securely.
 Examples:
   mcpproxy token create --name deploy-bot --servers github,gitlab --permissions read,write
   mcpproxy token create --name ci-agent --servers "*" --permissions read --expires 7d
-  mcpproxy token create --name full-access --servers github --permissions read,write,destructive --expires 90d`,
+	  mcpproxy token create --name full-access --servers github --permissions read,write,destructive --expires 90d`,
 		RunE: runTokenCreate,
 	}
 
@@ -79,7 +81,7 @@ Examples:
 	cmd.Flags().StringVar(&tokenServers, "servers", "", "Comma-separated list of allowed server names, or \"*\" for all (required)")
 	cmd.Flags().StringVar(&tokenPermissions, "permissions", "", "Comma-separated permission tiers: read, write, destructive (required, must include read)")
 	cmd.Flags().StringVar(&tokenExpires, "expires", "30d", "Token expiry duration (e.g., 7d, 30d, 90d, 365d)")
-	cmd.Flags().StringVar(&tokenProfilePin, "profile-pin", "", "Pin this token to a profile; it can only operate in that profile (cannot switch via set_profile or /mcp/p/<other>)")
+	cmd.Flags().StringVar(&tokenAccessProfiles, "access-profiles", "", "Comma-separated access profiles for this token")
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("servers")
 	_ = cmd.MarkFlagRequired("permissions")
@@ -169,8 +171,8 @@ func runTokenCreate(_ *cobra.Command, _ []string) error {
 		"permissions":     permissions,
 		"expires_in":      tokenExpires,
 	}
-	if tokenProfilePin != "" {
-		body["profile_pin"] = tokenProfilePin
+	if profiles := splitAndTrim(tokenAccessProfiles); len(profiles) > 0 {
+		body["access_profiles"] = profiles
 	}
 
 	bodyJSON, err := json.Marshal(body)
@@ -221,9 +223,7 @@ func runTokenCreate(_ *cobra.Command, _ []string) error {
 	printField("  Name:        ", result, "name")
 	printListField("  Servers:     ", result, "allowed_servers")
 	printListField("  Permissions: ", result, "permissions")
-	if pin := getMapString(result, "profile_pin"); pin != "" {
-		fmt.Printf("  Profile Pin: %s\n", pin)
-	}
+	printListField("  Access Profiles: ", result, "access_profiles")
 	printField("  Expires:     ", result, "expires_at")
 
 	return nil
@@ -272,8 +272,8 @@ func runTokenList(_ *cobra.Command, _ []string) error {
 	}
 
 	// Table format
-	fmt.Printf("%-20s %-14s %-25s %-20s %-8s %-12s %-25s\n",
-		"NAME", "PREFIX", "SERVERS", "PERMISSIONS", "REVOKED", "PROFILE PIN", "EXPIRES")
+	fmt.Printf("%-20s %-14s %-25s %-20s %-8s %-25s %-25s\n",
+		"NAME", "PREFIX", "SERVERS", "PERMISSIONS", "REVOKED", "ACCESS PROFILES", "EXPIRES")
 	fmt.Println(strings.Repeat("-", 128))
 
 	for _, t := range tokens {
@@ -291,9 +291,9 @@ func runTokenList(_ *cobra.Command, _ []string) error {
 		serverList := joinInterfaceSlice(tok, "allowed_servers", 23)
 		permList := joinInterfaceSlice(tok, "permissions", 0)
 
-		pin := getMapString(tok, "profile_pin")
-		if pin == "" {
-			pin = "-"
+		profiles := joinInterfaceSlice(tok, "access_profiles", 23)
+		if profiles == "" {
+			profiles = "-"
 		}
 
 		expiresAt := getMapString(tok, "expires_at")
@@ -303,8 +303,8 @@ func runTokenList(_ *cobra.Command, _ []string) error {
 			}
 		}
 
-		fmt.Printf("%-20s %-14s %-25s %-20s %-8s %-12s %-25s\n",
-			name, prefix, serverList, permList, revoked, pin, expiresAt)
+		fmt.Printf("%-20s %-14s %-25s %-20s %-8s %-25s %-25s\n",
+			name, prefix, serverList, permList, revoked, profiles, expiresAt)
 	}
 
 	return nil
@@ -355,9 +355,7 @@ func runTokenShow(_ *cobra.Command, args []string) error {
 	printField("Token Prefix:   ", result, "token_prefix")
 	printListField("Servers:        ", result, "allowed_servers")
 	printListField("Permissions:    ", result, "permissions")
-	if pin := getMapString(result, "profile_pin"); pin != "" {
-		fmt.Printf("Profile Pin:    %s\n", pin)
-	}
+	printListField("Access Profiles: ", result, "access_profiles")
 	if revoked, ok := result["revoked"].(bool); ok {
 		fmt.Printf("Revoked:        %v\n", revoked)
 	}
@@ -367,6 +365,69 @@ func runTokenShow(_ *cobra.Command, args []string) error {
 		fmt.Printf("Last Used:      %s\n", lastUsed)
 	}
 
+	return nil
+}
+
+func newTokenUpdateAccessProfilesCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "update-access-profiles <name>",
+		Aliases: []string{"set-access-profiles"},
+		Short:   "Replace the access profiles assigned to an agent token",
+		Long: `Replace the access profile list for an existing agent token without
+rotating its secret. Pass an empty value to remove all access profiles.
+
+Examples:
+  mcpproxy token update-access-profiles deploy-bot --access-profiles readonly,production
+  mcpproxy token update-access-profiles deploy-bot --access-profiles ""`,
+		Args: cobra.ExactArgs(1),
+		RunE: runTokenUpdateAccessProfiles,
+	}
+	cmd.Flags().StringVar(&tokenAccessProfiles, "access-profiles", "", "Comma-separated access profiles (required; empty clears them)")
+	_ = cmd.MarkFlagRequired("access-profiles")
+	return cmd
+}
+
+func runTokenUpdateAccessProfiles(_ *cobra.Command, args []string) error {
+	client, _, err := newTokenCLIClient()
+	if err != nil {
+		return err
+	}
+
+	body, err := json.Marshal(map[string]interface{}{
+		"access_profiles": splitAndTrim(tokenAccessProfiles),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	name := args[0]
+	resp, err := client.DoRaw(ctx, http.MethodPatch, "/api/v1/tokens/"+name+"/access-profiles", body)
+	if err != nil {
+		return fmt.Errorf("failed to update token access profiles: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return parseAPIError(respBody, resp.StatusCode, "update token access profiles")
+	}
+
+	result, err := parseTokenAPIResponse(respBody)
+	if err != nil {
+		return err
+	}
+	if ResolveOutputFormat() == "json" {
+		formatted, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Println(string(formatted))
+		return nil
+	}
+	fmt.Printf("Access profiles for token %q updated.\n", name)
+	printListField("Access Profiles: ", result, "access_profiles")
 	return nil
 }
 

@@ -59,6 +59,9 @@ func (p *MCPProxyServer) toolVisibleToSession(ctx context.Context, serverName, t
 	if !p.serverInScope(authCtx, profileScope, serverName) {
 		return false, visReasonServerNotInScope
 	}
+	if !profileScope.AllowsTool(serverName, toolName) {
+		return false, visReasonToolNotCallable
+	}
 	// describe_tool-only strict gates (contract steps 3–4) — ordered BEFORE
 	// callability so a quarantined/pending id reports its real lock, not a
 	// generic "disabled".
@@ -88,6 +91,9 @@ func (p *MCPProxyServer) indexedToolVisible(authCtx *auth.AuthContext, profileSc
 	// exists on a server it cannot access.
 	if !p.serverInScope(authCtx, profileScope, serverName) {
 		return false, visReasonServerNotInScope
+	}
+	if !profileScope.AllowsTool(serverName, toolName) {
+		return false, visReasonToolNotCallable
 	}
 
 	// Callability: disabled/blocked tools are non-existent for discovery.

@@ -143,6 +143,7 @@ func preflightParams(r *http.Request, req *contracts.PreflightRequest, tools []p
 		if authCtx != nil {
 			params.TokenServers = authCtx.AllowedServers
 			params.TokenProfilePin = authCtx.ProfilePin
+			params.TokenProfilePins = append([]string(nil), authCtx.AccessProfiles...)
 		}
 	}
 	return params

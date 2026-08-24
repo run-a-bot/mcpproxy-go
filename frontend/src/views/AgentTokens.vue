@@ -122,6 +122,7 @@
             <th>Name</th>
             <th>Prefix</th>
             <th>Servers</th>
+            <th>Profile</th>
             <th>Permissions</th>
             <th>Expires</th>
             <th>Last Used</th>
@@ -145,6 +146,14 @@
                   {{ server }}
                 </span>
               </div>
+            </td>
+            <td>
+              <span v-if="token.access_profiles?.length" class="flex flex-wrap gap-1">
+                <span v-for="pin in token.access_profiles" :key="pin" class="badge badge-primary badge-outline badge-sm">
+                  {{ pin }}
+                </span>
+              </span>
+              <span v-else class="text-base-content/40 text-sm">No profile pin</span>
             </td>
             <td>
               <div class="flex flex-wrap gap-1">
@@ -176,6 +185,14 @@
             </td>
             <td>
               <div class="flex gap-1">
+                <button
+                  @click="openEditDialog(token)"
+                  :disabled="token.revoked"
+                  class="btn btn-xs btn-outline"
+                  title="Assign profile pins"
+                >
+                  Edit
+                </button>
                 <button
                   @click="handleRegenerate(token.name)"
                   :disabled="token.revoked"
@@ -238,6 +255,22 @@
       <button @click="dismissTokenSecret" class="btn btn-sm btn-ghost shrink-0">Dismiss</button>
     </div>
 
+    <!-- Edit Token Dialog -->
+    <dialog ref="editDialog" class="modal">
+      <div class="modal-box">
+        <h3 class="font-bold text-lg mb-4">Edit Agent Token</h3>
+        <div class="space-y-4">
+          <label class="form-control"><span class="label-text font-medium">Token Name</span><input v-model="editForm.name" class="input input-bordered w-full" /></label>
+          <label class="form-control"><span class="label-text font-medium">Expires In</span><select v-model="editForm.expiresIn" class="select select-bordered w-full"><option value="168h">7 days</option><option value="720h">30 days</option><option value="2160h">90 days</option><option value="8760h">365 days</option></select></label>
+          <div class="form-control"><span class="label-text font-medium">Allowed Servers</span><label class="flex gap-2"><input v-model="editForm.allServers" type="checkbox" class="checkbox checkbox-sm" /> All servers</label><div v-if="!editForm.allServers" class="max-h-32 overflow-y-auto"> <label v-for="server in availableServers" :key="server.name" class="flex gap-2"><input v-model="editForm.selectedServers" type="checkbox" :value="server.name" class="checkbox checkbox-sm" /> {{ server.name }}</label></div></div>
+          <div class="form-control"><span class="label-text font-medium">Access Profiles</span><select v-model="editForm.accessProfiles" multiple class="select select-bordered w-full min-h-24"><option v-for="profile in profilesStore.profiles" :key="profile.name" :value="profile.name">{{ profile.name }}</option></select></div>
+          <div class="form-control"><span class="label-text font-medium">Permissions</span><label v-for="permission in ['read', 'write', 'destructive']" :key="permission" class="flex gap-2"><input v-model="editForm.permissions" type="checkbox" :value="permission" :disabled="permission === 'read'" class="checkbox checkbox-sm" /> {{ permission }}</label></div>
+        </div>
+        <div class="modal-action"><button class="btn" @click="editDialog?.close()">Cancel</button><button class="btn btn-primary" :disabled="editingToken" @click="saveEdit">{{ editingToken ? 'Saving…' : 'Save Changes' }}</button></div>
+      </div>
+      <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
     <!-- Create Token Dialog -->
     <dialog ref="createDialog" class="modal">
       <div class="modal-box">
@@ -262,6 +295,24 @@
             <label class="label" v-else>
               <span class="label-text-alt">Alphanumeric, hyphens, and underscores only</span>
             </label>
+          </div>
+
+          <!-- Profile scope -->
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Profile scope</span>
+            </label>
+            <select v-model="createForm.accessProfiles" multiple class="select select-bordered w-full min-h-24" data-test="token-access-profiles">
+              <option v-for="profile in profilesStore.profiles" :key="profile.name" :value="profile.name">
+                {{ profile.name }} ({{ profile.servers.length }} {{ profile.servers.length === 1 ? 'server' : 'servers' }}, {{ profile.tool_count }} tools)
+              </option>
+            </select>
+            <label class="label">
+              <span class="label-text-alt text-base-content/60">A pinned token can only discover and call tools from this profile's servers. Configure profiles in Configuration → Raw JSON.</span>
+            </label>
+            <div v-if="profilesStore.loaded && !profilesStore.hasProfiles" class="text-xs text-base-content/50">
+              No profiles are configured yet. Add a <code>profiles</code> block in Configuration.
+            </div>
           </div>
 
           <!-- Allowed Servers -->
@@ -382,10 +433,12 @@ import apiClient from '@/services/api'
 import { formatDateTimeShort } from '@/utils/datetime'
 import { useSystemStore } from '@/stores/system'
 import { useServersStore } from '@/stores/servers'
+import { useProfilesStore } from '@/stores/profiles'
 import type { AgentTokenInfo, Server } from '@/types'
 
 const systemStore = useSystemStore()
 const serversStore = useServersStore()
+const profilesStore = useProfilesStore()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -395,6 +448,10 @@ const newTokenSecret = ref<string | null>(null)
 const copied = ref(false)
 
 const createDialog = ref<HTMLDialogElement | null>(null)
+const editDialog = ref<HTMLDialogElement | null>(null)
+const editingToken = ref(false)
+const editForm = ref({ name: '', allServers: true, selectedServers: [] as string[], permissions: ['read'] as string[], expiresIn: '720h', accessProfiles: [] as string[] })
+const editOriginalName = ref('')
 
 const createForm = ref({
   name: '',
@@ -403,6 +460,7 @@ const createForm = ref({
   permWrite: false,
   permDestructive: false,
   expiresIn: '720h',
+    accessProfiles: [] as string[],
 })
 
 const createFormErrors = ref<{ name?: string; servers?: string }>({})
@@ -502,6 +560,7 @@ function openCreateDialog() {
     permWrite: false,
     permDestructive: false,
     expiresIn: '720h',
+    accessProfiles: [],
   }
   createFormErrors.value = {}
   // Ensure servers are loaded for the checkbox list
@@ -552,6 +611,7 @@ async function handleCreate() {
       allowed_servers: allowedServers,
       permissions,
       expires_in: createForm.value.expiresIn,
+      ...(createForm.value.accessProfiles.length ? { access_profiles: createForm.value.accessProfiles } : {}),
     })
 
     if (response.success && response.data) {
@@ -581,6 +641,25 @@ async function handleCreate() {
   } finally {
     creating.value = false
   }
+}
+
+function openEditDialog(token: AgentTokenInfo) {
+  editOriginalName.value = token.name
+  editForm.value = { name: token.name, allServers: token.allowed_servers.includes('*'), selectedServers: token.allowed_servers.filter(s => s !== '*'), permissions: [...token.permissions], expiresIn: '720h', accessProfiles: [...(token.access_profiles || [])] }
+  editDialog.value?.showModal()
+}
+
+async function saveEdit() {
+  if (!editForm.value.name.trim() || !editForm.value.permissions.includes('read')) return
+  editingToken.value = true
+  const response = await apiClient.updateAgentToken(editOriginalName.value, {
+    name: editForm.value.name.trim(), allowed_servers: editForm.value.allServers ? ['*'] : editForm.value.selectedServers,
+    permissions: editForm.value.permissions, expires_in: editForm.value.expiresIn, access_profiles: editForm.value.accessProfiles,
+  })
+  editingToken.value = false
+  if (!response.success) { systemStore.addToast({ type: 'error', title: 'Update failed', message: response.error || 'Failed to update token' }); return }
+  editDialog.value?.close(); await loadTokens()
+  systemStore.addToast({ type: 'success', title: 'Token updated', message: `Updated ${editForm.value.name}` })
 }
 
 // Regenerate token
@@ -708,5 +787,6 @@ function dismissTokenSecret() {
 onMounted(async () => {
   await new Promise(resolve => setTimeout(resolve, 100))
   loadTokens()
+  void profilesStore.fetchProfiles()
 })
 </script>
