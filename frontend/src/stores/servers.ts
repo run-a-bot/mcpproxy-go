@@ -259,14 +259,28 @@ export const useServersStore = defineStore('servers', () => {
   }
 
   async function triggerOAuthLogin(serverName: string) {
+    const authWindow = window.open('about:blank', '_blank')
     try {
       const response = await api.triggerOAuthLogin(serverName)
       if (response.success) {
+        const authUrl = response.data?.auth_url
+        if (!authUrl) {
+          authWindow?.close()
+          throw new Error('OAuth provider did not return an authorization URL')
+        }
+        if (authWindow) {
+          authWindow.opener = null
+          authWindow.location.replace(authUrl)
+        } else {
+          window.location.assign(authUrl)
+        }
         return true
       } else {
+        authWindow?.close()
         throw new Error(response.error || 'Failed to trigger OAuth login')
       }
     } catch (error) {
+      authWindow?.close()
       console.error('Failed to trigger OAuth login:', error)
       throw error
     }

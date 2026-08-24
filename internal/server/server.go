@@ -29,6 +29,7 @@ import (
 	"github.com/smart-mcp-proxy/mcpproxy-go/internal/httpapi"
 	"github.com/smart-mcp-proxy/mcpproxy-go/internal/logs"
 	"github.com/smart-mcp-proxy/mcpproxy-go/internal/management"
+	"github.com/smart-mcp-proxy/mcpproxy-go/internal/oauth"
 	"github.com/smart-mcp-proxy/mcpproxy-go/internal/observability"
 	"github.com/smart-mcp-proxy/mcpproxy-go/internal/profile"
 	"github.com/smart-mcp-proxy/mcpproxy-go/internal/runtime"
@@ -1750,6 +1751,13 @@ func (s *Server) UpdateServer(ctx context.Context, serverName string, updates *c
 		existing.InitTimeout = updates.InitTimeout
 	}
 
+	// OAuth is PATCH-semantic and must be merged rather than replaced so a UI
+	// update containing only client_id does not erase an already-stored secret
+	// or provider-specific scopes/parameters.
+	if updates.OAuth != nil {
+		existing.OAuth = config.MergeOAuthConfig(existing.OAuth, updates.OAuth, false)
+	}
+
 	// Isolation is PATCH-semantic: nil means "leave unchanged"; a
 	// present struct means "replace". Within the struct, the caller
 	// only populates fields they want to set (handled upstream by
@@ -2743,6 +2751,16 @@ func (s *Server) startCustomHTTPServer(ctx context.Context, streamableServer *se
 	// Forward REST API, events, health, and (MCP-32) /metrics onto the outer
 	// mux. Extracted so the routing is unit-testable (MCP-3135 regression).
 	s.registerHTTPHandlers(mux, httpAPIServer)
+	mux.Handle(oauth.DefaultRedirectPath+"/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cfg := s.runtime.Config()
+		if cfg == nil || cfg.APIKey == "" || httpapi.ExtractToken(r) != cfg.APIKey {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		oauth.HandleExternalCallback(w, r)
+	}))
+	s.logger.Info("Registered OAuth callback endpoint",
+		zap.String("path", oauth.DefaultRedirectPath+"/<server>"))
 
 	// Debug / profiling endpoints (API-key gated). Block & mutex profiles
 	// default to off; we enable them when the route is hit so the running
