@@ -42,12 +42,24 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
+import api from '@/services/api'
 
 const STORAGE_KEY = 'telemetry-banner-dismissed'
 const visible = ref(false)
 
-onMounted(() => {
-  visible.value = !localStorage.getItem(STORAGE_KEY)
+onMounted(async () => {
+  if (localStorage.getItem(STORAGE_KEY)) return
+
+  // The browser cannot read server environment variables directly. Use the
+  // server's resolved config so DO_NOT_TRACK=1 and the Settings opt-out both
+  // suppress this notice along with telemetry itself.
+  try {
+    const response = await api.getConfig()
+    visible.value = response.success && response.data?.config?.telemetry?.enabled !== false
+  } catch {
+    // Do not show a telemetry notice when its effective state is unknown.
+    visible.value = false
+  }
 })
 
 function dismiss() {

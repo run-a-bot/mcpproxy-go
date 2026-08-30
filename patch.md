@@ -148,3 +148,47 @@ Keep the frontend server state synchronized after OAuth configuration changes.
 - OAuth configuration updates persist across server reloads.
 - Reverse-proxy deployments retain the correct login and callback behavior.
 - The server detail UI reflects successful OAuth updates.
+
+### 4. Hide the telemetry notice when telemetry is disabled
+
+#### background
+
+Operators who disable telemetry—especially with DO_NOT_TRACK=1—should not be
+shown a telemetry prompt or its opt-out disclosure. The notice must therefore
+follow the server's effective telemetry state rather than an unrelated browser
+dismissal flag.
+
+#### files
+
+##### internal/config/config.go (modify)
+
+Expose DO_NOT_TRACK as part of the resolved telemetry setting returned to API
+clients, keeping the web UI's effective state aligned with the runtime.
+
+##### internal/contracts/converters.go (modify)
+
+Always serialize the effective telemetry.enabled value, including environment
+overrides when configuration explicitly enables telemetry.
+
+##### internal/contracts/converters_test.go (modify)
+
+Verify that DO_NOT_TRACK is reflected in the API configuration projection
+without mutating the source configuration.
+
+##### frontend/src/components/TelemetryBanner.vue (modify)
+
+Load the resolved telemetry setting before rendering the notice. Keep the
+notice hidden when telemetry is disabled in Settings, disabled by
+DO_NOT_TRACK, or cannot be resolved.
+
+##### frontend/tests/unit/telemetry-banner.spec.ts (create)
+
+Verify that the notice is hidden for disabled telemetry and shown for enabled
+telemetry.
+
+#### verify
+
+- DO_NOT_TRACK=1 causes the API's resolved telemetry.enabled value to be false.
+- The web UI does not render the telemetry notice when telemetry.enabled is
+  false.
+- The notice remains available when telemetry.enabled is true.

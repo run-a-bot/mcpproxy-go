@@ -2825,8 +2825,13 @@ type TelemetryConfig struct {
 }
 
 // IsTelemetryEnabled returns whether telemetry is enabled.
-// Respects MCPPROXY_TELEMETRY=false env var override and defaults to true.
+// Respects DO_NOT_TRACK and MCPPROXY_TELEMETRY=false env var overrides and
+// defaults to true. Keeping the environment override here ensures API clients
+// see the same effective state as the telemetry runtime.
 func (c *Config) IsTelemetryEnabled() bool {
+	if v := strings.TrimSpace(os.Getenv("DO_NOT_TRACK")); v != "" && v != "0" {
+		return false
+	}
 	if os.Getenv("MCPPROXY_TELEMETRY") == "false" {
 		return false
 	}

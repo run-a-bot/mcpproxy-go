@@ -72,6 +72,19 @@ func TestConvertConfigToContract_TelemetryExplicitFalsePreserved(t *testing.T) {
 	assert.False(t, enabled, "explicit telemetry opt-out must be preserved")
 }
 
+func TestConvertConfigToContract_TelemetryDoNotTrackOverride(t *testing.T) {
+	t.Setenv("DO_NOT_TRACK", "1")
+	t.Setenv("MCPPROXY_TELEMETRY", "")
+	enabledConfig := true
+	cfg := config.DefaultConfig()
+	cfg.Telemetry = &config.TelemetryConfig{Enabled: &enabledConfig}
+
+	enabled, present := telemetryEnabledFromContract(t, cfg)
+	assert.True(t, present, "telemetry.enabled must be present when environment overrides config")
+	assert.False(t, enabled, "DO_NOT_TRACK must be reflected in the API response")
+	assert.True(t, *cfg.Telemetry.Enabled, "ConvertConfigToContract must not mutate the source config")
+}
+
 // TestConvertGenericServersToTyped_OAuth verifies OAuth config is properly extracted
 func TestConvertGenericServersToTyped_OAuth(t *testing.T) {
 	// Simulate the map structure returned from the management service
