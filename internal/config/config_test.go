@@ -1244,6 +1244,11 @@ func TestConfig_IsTelemetryEnabled(t *testing.T) {
 			want:     false,
 		},
 		{
+			name: "DO_NOT_TRACK disables telemetry",
+			cfg:  &Config{Telemetry: &TelemetryConfig{Enabled: BoolPtr(true)}},
+			want: false,
+		},
+		{
 			name:     "env var other value does not disable",
 			cfg:      &Config{},
 			envValue: "true",
@@ -1253,6 +1258,11 @@ func TestConfig_IsTelemetryEnabled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			dnt := ""
+			if tt.name == "DO_NOT_TRACK disables telemetry" {
+				dnt = "1"
+			}
+			t.Setenv("DO_NOT_TRACK", dnt)
 			if tt.envValue != "" {
 				t.Setenv("MCPPROXY_TELEMETRY", tt.envValue)
 			} else {
