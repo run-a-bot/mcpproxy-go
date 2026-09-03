@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	"go.uber.org/zap"
@@ -54,6 +55,13 @@ func containsProfilePin(pins []string, slug string) bool {
 		}
 	}
 	return false
+}
+
+func formatPinnedProfiles(pins []string) string {
+	if len(pins) == 1 {
+		return fmt.Sprintf("profile '%s'", pins[0])
+	}
+	return fmt.Sprintf("profiles %v", pins)
 }
 
 // currentConfig returns the live configuration snapshot (hot-reload safe),
