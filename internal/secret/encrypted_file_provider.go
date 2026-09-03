@@ -155,6 +155,9 @@ func (p *EncryptedFileProvider) load() ([]byte, encryptedFileContents, error) {
 	if err != nil {
 		return nil, encryptedFileContents{}, fmt.Errorf("read encrypted secret store: %w", err)
 	}
+	if err := enforceOwnerOnlyPermissions(p.path); err != nil {
+		return nil, encryptedFileContents{}, err
+	}
 	if err := json.Unmarshal(data, &contents); err != nil {
 		return nil, encryptedFileContents{}, fmt.Errorf("decode encrypted secret store: %w", err)
 	}
@@ -173,12 +176,8 @@ func (p *EncryptedFileProvider) loadOrCreateKey() ([]byte, error) {
 		if len(key) != 32 {
 			return nil, fmt.Errorf("encrypted secret store key must contain 32 bytes")
 		}
-		info, statErr := os.Stat(p.keyPath)
-		if statErr != nil {
-			return nil, fmt.Errorf("inspect encrypted secret store key: %w", statErr)
-		}
-		if info.Mode().Perm()&0o077 != 0 {
-			return nil, fmt.Errorf("encrypted secret store key permissions must not grant group or other access")
+		if err := enforceOwnerOnlyPermissions(p.keyPath); err != nil {
+			return nil, err
 		}
 		return key, nil
 	}
@@ -200,6 +199,10 @@ func (p *EncryptedFileProvider) loadOrCreateKey() ([]byte, error) {
 	file, err := os.OpenFile(p.keyPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("create encrypted secret store key: %w", err)
+	}
+	if err := file.Chmod(0o600); err != nil {
+		_ = file.Close()
+		return nil, fmt.Errorf("secure encrypted secret store key: %w", err)
 	}
 	if _, err := file.Write(key); err != nil {
 		_ = file.Close()
@@ -243,6 +246,27 @@ func (p *EncryptedFileProvider) save(contents encryptedFileContents) error {
 	}
 	if err := os.Rename(temporaryPath, p.path); err != nil {
 		return fmt.Errorf("replace encrypted secret store: %w", err)
+	}
+	return enforceOwnerOnlyPermissions(p.path)
+}
+
+func enforceOwnerOnlyPermissions(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("inspect encrypted secret store file: %w", err)
+	}
+	if info.Mode().Perm()&0o077 == 0 {
+		return nil
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		return fmt.Errorf("repair encrypted secret store permissions: %w", err)
+	}
+	info, err = os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("verify encrypted secret store permissions: %w", err)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return fmt.Errorf("encrypted secret store permissions must not grant group or other access")
 	}
 	return nil
 }
