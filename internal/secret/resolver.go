@@ -3,6 +3,7 @@ package secret
 import (
 	"context"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 )
@@ -15,7 +16,11 @@ func NewResolver() *Resolver {
 
 	// Register default providers
 	r.RegisterProvider("env", NewEnvProvider())
-	r.RegisterProvider("keyring", NewKeyringProvider())
+	keyringProvider := Provider(NewKeyringProvider())
+	if path := strings.TrimSpace(os.Getenv("MCPPROXY_KEYRING_FILE")); path != "" {
+		keyringProvider = NewEncryptedFileProvider(path)
+	}
+	r.RegisterProvider("keyring", keyringProvider)
 
 	return r
 }
