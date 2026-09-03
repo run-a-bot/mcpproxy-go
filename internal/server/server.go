@@ -2257,7 +2257,7 @@ func (s *Server) profileMiddleware(next http.Handler) http.Handler {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"error": fmt.Sprintf("agent token is pinned to profiles %v and cannot access profile '%s'", pins, slug),
+				"error": fmt.Sprintf("agent token is pinned to %s and cannot access profile '%s'", formatPinnedProfiles(pins), slug),
 			})
 			return
 		}

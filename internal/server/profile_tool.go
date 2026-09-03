@@ -70,7 +70,7 @@ func (p *MCPProxyServer) handleSetProfile(ctx context.Context, request mcp.CallT
 			}
 		}
 		if !allowed {
-			return mcp.NewToolResultError(fmt.Sprintf("agent token is pinned to profiles %v and cannot switch to '%s'", pins, slug)), nil
+			return mcp.NewToolResultError(fmt.Sprintf("agent token is pinned to %s and cannot switch to '%s'", formatPinnedProfiles(pins), slug)), nil
 		}
 	}
 
