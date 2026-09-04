@@ -174,11 +174,6 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Default allowed_servers to ["*"] if empty
-	if len(req.AllowedServers) == 0 {
-		req.AllowedServers = []string{"*"}
-	}
-
 	// Validate profile_pin (Profiles v2 T3): the slug must name a configured
 	// profile at creation time. Later config changes are warn-skipped at request
 	// time by the resolver, not hard-failed here.
@@ -543,10 +538,16 @@ func (s *Server) validateProfilePin(slug string) error {
 
 // parseExpiry parses an expiry duration string and returns the absolute expiry time.
 // Accepted formats: "30d" (days), "720h" (hours), or any Go duration string.
+// Non-expiring tokens are represented by "never", "none", "0", or "0s" (returns zero time).
 // Maximum allowed duration is 365 days. Empty string defaults to 30 days.
 func parseExpiry(expiresIn string) (time.Time, error) {
 	if expiresIn == "" {
 		return time.Now().UTC().Add(defaultExpiryDuration), nil
+	}
+
+	norm := strings.TrimSpace(strings.ToLower(expiresIn))
+	if norm == "never" || norm == "none" || norm == "0" || norm == "0s" || norm == "0d" || norm == "0h" {
+		return time.Time{}, nil
 	}
 
 	var d time.Duration
@@ -582,7 +583,7 @@ func parseExpiry(expiresIn string) (time.Time, error) {
 // or corresponds to a known server in the current configuration.
 func validateAllowedServers(servers []string, controller ServerNameLister) error {
 	if len(servers) == 0 {
-		return nil // empty means default to ["*"]
+		return nil
 	}
 
 	// Collect known server names

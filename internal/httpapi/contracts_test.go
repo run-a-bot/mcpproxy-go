@@ -319,7 +319,7 @@ func (m *MockServerController) RefreshRegistryCache(_ string) (int, error) {
 	return 0, nil
 }
 func (m *MockServerController) AddServerFromRegistryRef(_ context.Context, _, _, _ string, _ map[string]string, _ *bool) (*config.ServerConfig, *contracts.RegistryAddError, error) {
-	return nil, nil, nil
+	return &config.ServerConfig{Name: "test-server"}, nil, nil
 }
 func (m *MockServerController) AddRegistrySourceRef(_, _, _, _ string) (*config.RegistryEntry, *contracts.RegistryAddError, error) {
 	return nil, nil, nil

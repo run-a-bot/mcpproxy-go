@@ -323,7 +323,28 @@ func TestCreateToken_DefaultPermissions(t *testing.T) {
 	decodeSuccess(t, w, &resp)
 
 	assert.Equal(t, []string{"read"}, resp.Permissions)
-	assert.Equal(t, []string{"*"}, resp.AllowedServers)
+	assert.Empty(t, resp.AllowedServers, "AllowedServers should remain empty when not specified")
+}
+
+func TestCreateToken_NeverExpiry(t *testing.T) {
+	store := newMockTokenStore()
+	srv := newTestTokenServer(t, store, nil)
+
+	for _, exp := range []string{"never", "none", "0", "0s"} {
+		t.Run(exp, func(t *testing.T) {
+			body := createTokenRequest{
+				Name:        "never-" + exp,
+				Permissions: []string{"read"},
+				ExpiresIn:   exp,
+			}
+			w := doRequest(t, srv, http.MethodPost, "/api/v1/tokens", body)
+			assert.Equal(t, http.StatusCreated, w.Code)
+
+			var resp createTokenResponse
+			decodeSuccess(t, w, &resp)
+			assert.True(t, resp.ExpiresAt.IsZero(), "ExpiresAt should be zero for %q", exp)
+		})
+	}
 }
 
 func TestCreateToken_DefaultExpiry(t *testing.T) {
@@ -456,7 +477,7 @@ func TestCreateToken_InvalidExpiry(t *testing.T) {
 		{"9000h", "over 365 days in hours"},
 		{"-1d", "negative days"},
 		{"abc", "non-numeric"},
-		{"0d", "zero days"},
+		{"0x", "invalid unit"},
 	}
 
 	for _, tt := range tests {
@@ -843,7 +864,7 @@ func TestParseExpiry(t *testing.T) {
 		{"24h", false, "24 hours"},
 		{"720h", false, "720 hours"},
 		{"366d", true, "over 365 days"},
-		{"0d", true, "zero days"},
+		{"0x", true, "invalid unit"},
 		{"-1d", true, "negative days"},
 		{"abc", true, "non-numeric"},
 		{"8761h", true, "over 365 days in hours"},
@@ -858,6 +879,14 @@ func TestParseExpiry(t *testing.T) {
 				assert.NoError(t, err)
 				assert.True(t, result.After(time.Now()), "Expiry should be in the future")
 			}
+		})
+	}
+
+	for _, exp := range []string{"never", "none", "0", "0s", "0d", "0h"} {
+		t.Run("zero_expiry_"+exp, func(t *testing.T) {
+			result, err := parseExpiry(exp)
+			assert.NoError(t, err)
+			assert.True(t, result.IsZero(), "Expiry should be zero for %q", exp)
 		})
 	}
 }
