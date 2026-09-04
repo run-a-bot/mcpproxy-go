@@ -78,12 +78,11 @@ Examples:
 	}
 
 	cmd.Flags().StringVar(&tokenName, "name", "", "Token name (required, unique)")
-	cmd.Flags().StringVar(&tokenServers, "servers", "", "Comma-separated list of allowed server names, or \"*\" for all (required)")
+	cmd.Flags().StringVar(&tokenServers, "servers", "", "Comma-separated list of allowed server names, \"*\" for all, or \"\" / \"none\" for zero access")
 	cmd.Flags().StringVar(&tokenPermissions, "permissions", "", "Comma-separated permission tiers: read, write, destructive (required, must include read)")
-	cmd.Flags().StringVar(&tokenExpires, "expires", "30d", "Token expiry duration (e.g., 7d, 30d, 90d, 365d)")
+	cmd.Flags().StringVar(&tokenExpires, "expires", "30d", "Token expiry duration (e.g., 7d, 30d, 90d, 365d, or never/none/0)")
 	cmd.Flags().StringVar(&tokenAccessProfiles, "access-profiles", "", "Comma-separated access profiles for this token")
 	_ = cmd.MarkFlagRequired("name")
-	_ = cmd.MarkFlagRequired("servers")
 	_ = cmd.MarkFlagRequired("permissions")
 
 	return cmd
@@ -162,7 +161,10 @@ func runTokenCreate(_ *cobra.Command, _ []string) error {
 	}
 
 	// Build request body
-	servers := splitAndTrim(tokenServers)
+	servers := []string{}
+	if strings.TrimSpace(strings.ToLower(tokenServers)) != "none" {
+		servers = splitAndTrim(tokenServers)
+	}
 	permissions := splitAndTrim(tokenPermissions)
 
 	body := map[string]interface{}{
@@ -221,10 +223,10 @@ func runTokenCreate(_ *cobra.Command, _ []string) error {
 		fmt.Println()
 	}
 	printField("  Name:        ", result, "name")
-	printListField("  Servers:     ", result, "allowed_servers")
+	printListFieldWithDefault("  Servers:     ", result, "allowed_servers", "none")
 	printListField("  Permissions: ", result, "permissions")
 	printListField("  Access Profiles: ", result, "access_profiles")
-	printField("  Expires:     ", result, "expires_at")
+	printExpiryField("  Expires:     ", result, "expires_at")
 
 	return nil
 }
@@ -289,6 +291,9 @@ func runTokenList(_ *cobra.Command, _ []string) error {
 		}
 
 		serverList := joinInterfaceSlice(tok, "allowed_servers", 23)
+		if serverList == "" {
+			serverList = "-"
+		}
 		permList := joinInterfaceSlice(tok, "permissions", 0)
 
 		profiles := joinInterfaceSlice(tok, "access_profiles", 23)
@@ -296,12 +301,7 @@ func runTokenList(_ *cobra.Command, _ []string) error {
 			profiles = "-"
 		}
 
-		expiresAt := getMapString(tok, "expires_at")
-		if expiresAt != "" {
-			if t, parseErr := time.Parse(time.RFC3339, expiresAt); parseErr == nil {
-				expiresAt = t.Format("2006-01-02 15:04")
-			}
-		}
+		expiresAt := formatExpiry(getMapString(tok, "expires_at"))
 
 		fmt.Printf("%-20s %-14s %-25s %-20s %-8s %-25s %-25s\n",
 			name, prefix, serverList, permList, revoked, profiles, expiresAt)
@@ -353,14 +353,14 @@ func runTokenShow(_ *cobra.Command, args []string) error {
 	// Pretty print
 	printField("Name:           ", result, "name")
 	printField("Token Prefix:   ", result, "token_prefix")
-	printListField("Servers:        ", result, "allowed_servers")
+	printListFieldWithDefault("Servers:        ", result, "allowed_servers", "none")
 	printListField("Permissions:    ", result, "permissions")
 	printListField("Access Profiles: ", result, "access_profiles")
 	if revoked, ok := result["revoked"].(bool); ok {
 		fmt.Printf("Revoked:        %v\n", revoked)
 	}
 	printField("Created:        ", result, "created_at")
-	printField("Expires:        ", result, "expires_at")
+	printExpiryField("Expires:        ", result, "expires_at")
 	if lastUsed := getMapString(result, "last_used_at"); lastUsed != "" {
 		fmt.Printf("Last Used:      %s\n", lastUsed)
 	}
@@ -638,13 +638,35 @@ func printField(label string, m map[string]interface{}, key string) {
 }
 
 func printListField(label string, m map[string]interface{}, key string) {
-	if items, ok := m[key].([]interface{}); ok {
+	printListFieldWithDefault(label, m, key, "")
+}
+
+func printListFieldWithDefault(label string, m map[string]interface{}, key string, def string) {
+	if items, ok := m[key].([]interface{}); ok && len(items) > 0 {
 		strs := make([]string, len(items))
 		for i, s := range items {
 			strs[i] = fmt.Sprintf("%v", s)
 		}
 		fmt.Printf("%s%s\n", label, strings.Join(strs, ", "))
+	} else if def != "" {
+		fmt.Printf("%s%s\n", label, def)
 	}
+}
+
+func formatExpiry(expiresAt string) string {
+	if expiresAt == "" {
+		return "never"
+	}
+	t, parseErr := time.Parse(time.RFC3339, expiresAt)
+	if parseErr != nil || t.IsZero() {
+		return "never"
+	}
+	return t.Format("2006-01-02 15:04")
+}
+
+func printExpiryField(label string, m map[string]interface{}, key string) {
+	v := getMapString(m, key)
+	fmt.Printf("%s%s\n", label, formatExpiry(v))
 }
 
 func joinInterfaceSlice(m map[string]interface{}, key string, maxLen int) string {

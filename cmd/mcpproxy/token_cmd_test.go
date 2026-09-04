@@ -126,10 +126,10 @@ func TestJoinInterfaceSlice(t *testing.T) {
 	assert.Equal(t, "", joinInterfaceSlice(m, "missing", 0))
 }
 
-func TestTokenCreateCmd_RequiredFlags(t *testing.T) {
+func TestTokenCreateCmd_Flags(t *testing.T) {
 	cmd := newTokenCreateCmd()
 
-	// Verify required flags are defined
+	// Verify required and optional flags are defined
 	nameFlag := cmd.Flags().Lookup("name")
 	assert.NotNil(t, nameFlag, "should have --name flag")
 
@@ -299,4 +299,62 @@ func TestTokenCommand_ConfigFlagRegistered(t *testing.T) {
 	if assert.NotNil(t, flag, "token command must have persistent --config flag") {
 		assert.Equal(t, "c", flag.Shorthand)
 	}
+}
+
+func TestFormatExpiry(t *testing.T) {
+	assert.Equal(t, "never", formatExpiry(""))
+	assert.Equal(t, "never", formatExpiry("0001-01-01T00:00:00Z"))
+	assert.Equal(t, "never", formatExpiry("invalid-date"))
+	assert.Equal(t, "2026-08-23 00:00", formatExpiry("2026-08-23T00:00:00Z"))
+}
+
+func TestRunTokenCreate_ZeroAccessAndNeverExpires(t *testing.T) {
+	var capturedReq map[string]interface{}
+	newTokenTestDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&capturedReq)
+		resp := contracts.NewSuccessResponse(map[string]interface{}{
+			"name":            "zero-token",
+			"token":           "mcp_agt_test12345",
+			"allowed_servers": []string{},
+			"permissions":     []string{"read"},
+			"expires_at":      "0001-01-01T00:00:00Z",
+		})
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+
+	oldName, oldServers, oldPerms, oldExpires := tokenName, tokenServers, tokenPermissions, tokenExpires
+	tokenName, tokenServers, tokenPermissions, tokenExpires = "zero-token", "none", "read", "never"
+	defer func() {
+		tokenName, tokenServers, tokenPermissions, tokenExpires = oldName, oldServers, oldPerms, oldExpires
+	}()
+
+	out := captureTokenStdout(t, func() error { return runTokenCreate(nil, nil) })
+	assert.Contains(t, out, "mcp_agt_test12345")
+	assert.Contains(t, out, "Servers:     none")
+	assert.Contains(t, out, "Expires:     never")
+
+	servers, ok := capturedReq["allowed_servers"].([]interface{})
+	assert.True(t, ok)
+	assert.Empty(t, servers, "allowed_servers payload must be empty when --servers 'none' is passed")
+}
+
+func TestRunTokenList_ZeroAccessAndNeverExpiryDisplay(t *testing.T) {
+	newTokenTestDaemon(t, func(w http.ResponseWriter, _ *http.Request) {
+		resp := contracts.NewSuccessResponse(map[string]interface{}{
+			"tokens": []map[string]interface{}{{
+				"name": "zero-agent", "token_prefix": "mcp_agt_0000",
+				"allowed_servers": []string{}, "permissions": []string{"read"},
+				"revoked": false, "expires_at": "0001-01-01T00:00:00Z", "created_at": "2026-07-24T00:00:00Z",
+			}},
+		})
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+
+	out := captureTokenStdout(t, func() error { return runTokenList(nil, nil) })
+	assert.Contains(t, out, "zero-agent")
+	assert.Contains(t, out, "never", "zero expiry must format as 'never'")
+	assert.Contains(t, out, "-", "empty server list in table must display as '-'")
 }
