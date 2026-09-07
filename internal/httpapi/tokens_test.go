@@ -46,7 +46,14 @@ func (m *mockTokenStore) CreateAgentToken(token auth.AgentToken, _ string, _ []b
 	m.tokens[token.Name] = token
 	return nil
 }
-func (m *mockTokenStore) UpdateAgentToken(string, auth.AgentToken) error         { return nil }
+func (m *mockTokenStore) UpdateAgentToken(oldName string, token auth.AgentToken) error {
+	if _, ok := m.tokens[oldName]; !ok {
+		return fmt.Errorf("agent token %q not found", oldName)
+	}
+	delete(m.tokens, oldName)
+	m.tokens[token.Name] = token
+	return nil
+}
 func (m *mockTokenStore) UpdateAgentTokenProfilePins(_ string, _ []string) error { return nil }
 
 func (m *mockTokenStore) ListAgentTokens() ([]auth.AgentToken, error) {
@@ -630,6 +637,76 @@ func TestGetToken_NotFound(t *testing.T) {
 
 	w := doRequest(t, srv, http.MethodGet, "/api/v1/tokens/nonexistent", nil)
 	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestUpdateTokenPreservesExpiryWhenOmittedOrBlank(t *testing.T) {
+	tests := []struct {
+		name string
+		body any
+	}{
+		{
+			name: "omitted",
+			body: map[string]any{
+				"name":            "preserve-expiry",
+				"allowed_servers": []string{"*"},
+				"permissions":     []string{"read"},
+			},
+		},
+		{
+			name: "empty",
+			body: updateTokenRequest{Name: "preserve-expiry", AllowedServers: []string{"*"}, Permissions: []string{"read"}},
+		},
+		{
+			name: "whitespace",
+			body: updateTokenRequest{Name: "preserve-expiry", AllowedServers: []string{"*"}, Permissions: []string{"read"}, ExpiresIn: "   "},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newMockTokenStore()
+			srv := newTestTokenServer(t, store, nil)
+			expiresAt := time.Now().UTC().Add(17 * 24 * time.Hour).Round(time.Second)
+			store.tokens["preserve-expiry"] = auth.AgentToken{
+				Name:           "preserve-expiry",
+				AllowedServers: []string{"*"},
+				Permissions:    []string{"read"},
+				ExpiresAt:      expiresAt,
+			}
+
+			w := doRequest(t, srv, http.MethodPatch, "/api/v1/tokens/preserve-expiry", tt.body)
+			require.Equal(t, http.StatusOK, w.Code)
+
+			stored, err := store.GetAgentTokenByName("preserve-expiry")
+			require.NoError(t, err)
+			require.NotNil(t, stored)
+			assert.Equal(t, expiresAt, stored.ExpiresAt)
+		})
+	}
+}
+
+func TestUpdateTokenCanExplicitlyClearExpiry(t *testing.T) {
+	store := newMockTokenStore()
+	srv := newTestTokenServer(t, store, nil)
+	store.tokens["never-expire"] = auth.AgentToken{
+		Name:           "never-expire",
+		AllowedServers: []string{"*"},
+		Permissions:    []string{"read"},
+		ExpiresAt:      time.Now().UTC().Add(24 * time.Hour),
+	}
+
+	body := updateTokenRequest{
+		Name:           "never-expire",
+		AllowedServers: []string{"*"},
+		Permissions:    []string{"read"},
+		ExpiresIn:      "never",
+	}
+	w := doRequest(t, srv, http.MethodPatch, "/api/v1/tokens/never-expire", body)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	stored, err := store.GetAgentTokenByName("never-expire")
+	require.NoError(t, err)
+	require.NotNil(t, stored)
+	assert.True(t, stored.ExpiresAt.IsZero())
 }
 
 func TestRevokeToken(t *testing.T) {

@@ -356,11 +356,6 @@ func (s *Server) handleUpdateToken(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
-	expiresAt, err := parseExpiry(req.ExpiresIn)
-	if err != nil {
-		s.writeError(w, r, http.StatusBadRequest, err.Error())
-		return
-	}
 	for _, pin := range req.AccessProfiles {
 		if err := s.validateProfilePin(pin); err != nil {
 			s.writeError(w, r, http.StatusBadRequest, err.Error())
@@ -371,6 +366,14 @@ func (s *Server) handleUpdateToken(w http.ResponseWriter, r *http.Request) {
 	if err != nil || old == nil {
 		s.writeError(w, r, http.StatusNotFound, "agent token not found")
 		return
+	}
+	expiresAt := old.ExpiresAt
+	if strings.TrimSpace(req.ExpiresIn) != "" {
+		expiresAt, err = parseExpiry(req.ExpiresIn)
+		if err != nil {
+			s.writeError(w, r, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	updated := *old
 	updated.Name, updated.AllowedServers, updated.Permissions, updated.ExpiresAt = req.Name, req.AllowedServers, req.Permissions, expiresAt

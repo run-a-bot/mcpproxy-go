@@ -192,3 +192,56 @@ telemetry.
 - The web UI does not render the telemetry notice when telemetry.enabled is
   false.
 - The notice remains available when telemetry.enabled is true.
+
+### 5. Preserve managed agent-token credentials and allow permission assignment
+
+#### background
+
+Editing an agent token in the dashboard silently replaced its expiration with
+30 days from the edit, even when the token was permanent or had a different
+finite expiration. Runabot-managed tokens must retain their secret to prevent
+desynchronizing the orchestrator secret. Secret regeneration and permanent
+deletion remain disabled for managed tokens, while editing is permitted so
+users can assign profile scopes, allowed servers, and permissions. Soft
+revocation remains available as an explicit user opt-out.
+
+#### files
+
+##### internal/httpapi/tokens.go (modify)
+
+Preserve the existing expiration on token updates when expires_in is omitted,
+empty, or whitespace-only, while retaining explicit duration and never-expire
+updates.
+
+##### internal/httpapi/tokens_test.go (modify)
+
+Verify exact expiration preservation for omitted and blank updates and verify
+that an explicit never value still clears a finite expiration.
+
+##### frontend/src/views/AgentTokens.vue (modify)
+
+Represent zero-time expiration as an active, non-expiring token; default edits
+to keeping the exact existing expiration; and identify Runabot-managed tokens.
+Allow editing managed tokens (assigning profile scope, servers, permissions)
+while keeping secret regeneration and permanent deletion disabled. Ensure the
+action buttons wrap into multiple rows on smaller viewports before the table
+scrolls horizontally. Prevent horizontal scrolling in the Create Token dialog by
+word-wrapping the profile pin guidance text.
+
+##### frontend/tests/unit/agent-tokens-managed.spec.ts (modify)
+
+Verify non-expiring status, managed-token action restrictions (regenerate and
+delete disabled, edit enabled), soft revocation, and expiry preservation.
+
+#### verify
+
+- Editing a token without selecting a new expiration preserves its exact
+  expires_at timestamp.
+- Selecting Never explicitly converts a finite token into a non-expiring one.
+- Zero-time tokens display Never and remain Active.
+- Runabot-managed tokens can be edited to configure profile scopes, servers,
+  and permissions; regenerate and delete remain disabled.
+- Runabot-managed tokens can be soft-revoked as a durable user opt-out.
+- On smaller viewports, the Actions column wraps buttons across rows without
+  causing unnecessary horizontal scroll.
+- The Create Token modal wraps help text without causing horizontal scrollbars.

@@ -221,8 +221,8 @@ class APIService {
         const errorMsg = errorData.error || `HTTP ${response.status}: ${response.statusText}`
         console.error(`API request failed: ${errorMsg}`)
 
-        // Special handling for authentication errors
-        if (response.status === 401 || response.status === 403) {
+        // Special handling for authentication errors (401 Unauthorized only; 403 Forbidden is a policy/scope rejection)
+        if (response.status === 401) {
           console.error('Authentication failed - API key may be invalid or missing')
           this.emitAuthError(errorMsg, response.status)
         }
@@ -773,12 +773,8 @@ class APIService {
       const payload: any = await response.json().catch(() => ({}))
 
       if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-          // registries_locked is a 403 but is a policy decision, not an auth
-          // failure — only emit the auth-error path for a missing/invalid key.
-          if (payload?.code !== 'registries_locked') {
-            this.emitAuthError(payload?.error || `HTTP ${response.status}`, response.status)
-          }
+        if (response.status === 401) {
+          this.emitAuthError(payload?.error || `HTTP ${response.status}`, response.status)
         }
         return {
           success: false,
@@ -824,10 +820,8 @@ class APIService {
       const payload: any = await response.json().catch(() => ({}))
 
       if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-          if (payload?.code !== 'registries_locked') {
-            this.emitAuthError(payload?.error || `HTTP ${response.status}`, response.status)
-          }
+        if (response.status === 401) {
+          this.emitAuthError(payload?.error || `HTTP ${response.status}`, response.status)
         }
         return {
           success: false,
@@ -861,10 +855,8 @@ class APIService {
       const payload: any = await response.json().catch(() => ({}))
 
       if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-          if (payload?.code !== 'registries_locked') {
-            this.emitAuthError(payload?.error || `HTTP ${response.status}`, response.status)
-          }
+        if (response.status === 401) {
+          this.emitAuthError(payload?.error || `HTTP ${response.status}`, response.status)
         }
         return {
           success: false,
@@ -914,7 +906,7 @@ class APIService {
       const payload: any = await response.json().catch(() => ({}))
 
       if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
+        if (response.status === 401) {
           this.emitAuthError(payload?.error || `HTTP ${response.status}`, response.status)
         }
         return {

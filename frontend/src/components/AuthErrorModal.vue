@@ -145,7 +145,7 @@ const currentAPIKeyStatus = computed(() => {
   if (!api.hasAPIKey()) {
     return 'No API key set'
   }
-  if (props.lastError?.includes('401') || props.lastError?.includes('403')) {
+  if (props.lastError?.includes('401')) {
     return 'Invalid or expired'
   }
   return 'Set but validation failed'
