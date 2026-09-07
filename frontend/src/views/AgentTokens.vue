@@ -115,7 +115,11 @@
     </div>
 
     <!-- Token List Table -->
-    <div v-else class="overflow-x-auto">
+    <div v-else class="space-y-4">
+      <div v-if="hasManagedTokens" class="alert alert-info" data-test="managed-token-banner">
+        <span>Managed tokens are provisioned by the orchestrator. You may revoke one to disable the generated credential; Runabot will not automatically recreate it. Other changes must be made through Bot Profile assignments.</span>
+      </div>
+      <div class="overflow-x-auto">
       <table class="table table-zebra w-full">
         <thead>
           <tr>
@@ -132,7 +136,10 @@
         </thead>
         <tbody>
           <tr v-for="token in filteredTokens" :key="token.name">
-            <td class="font-medium">{{ token.name }}</td>
+            <td class="font-medium">
+              <span>{{ token.name }}</span>
+              <span v-if="isManagedToken(token)" class="badge badge-info badge-sm ml-2" data-test="managed-token-badge">Managed</span>
+            </td>
             <td>
               <code class="text-sm bg-base-200 px-2 py-1 rounded">{{ token.token_prefix }}</code>
             </td>
@@ -169,7 +176,7 @@
             </td>
             <td>
               <span :class="{ 'text-warning': isExpiringSoon(token), 'text-error': isExpired(token) }">
-                {{ formatDate(token.expires_at) }}
+                {{ formatExpiry(token.expires_at) }}
               </span>
             </td>
             <td>
@@ -187,17 +194,19 @@
               <div class="flex gap-1">
                 <button
                   @click="openEditDialog(token)"
-                  :disabled="token.revoked"
+                  :disabled="token.revoked || isManagedToken(token)"
                   class="btn btn-xs btn-outline"
-                  title="Assign profile pins"
+                  :title="isManagedToken(token) ? managedTokenHelp : 'Assign profile pins'"
+                  :data-test="`token-edit-${token.name}`"
                 >
                   Edit
                 </button>
                 <button
                   @click="handleRegenerate(token.name)"
-                  :disabled="token.revoked"
+                  :disabled="token.revoked || isManagedToken(token)"
                   class="btn btn-xs btn-outline"
-                  title="Regenerate token secret"
+                  :title="isManagedToken(token) ? managedTokenHelp : 'Regenerate token secret'"
+                  :data-test="`token-regenerate-${token.name}`"
                 >
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -209,6 +218,7 @@
                   :disabled="token.revoked"
                   class="btn btn-xs btn-error btn-outline"
                   title="Revoke token"
+                  :data-test="`token-revoke-${token.name}`"
                 >
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
@@ -218,8 +228,10 @@
                 <button
                   v-if="token.revoked || isExpired(token)"
                   @click="handleDelete(token.name)"
+                  :disabled="isManagedToken(token)"
                   class="btn btn-xs btn-error"
-                  title="Permanently delete token and free its name for reuse"
+                  :title="isManagedToken(token) ? managedTokenHelp : 'Permanently delete token and free its name for reuse'"
+                  :data-test="`token-delete-${token.name}`"
                 >
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -231,6 +243,7 @@
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
 
     <!-- Token Secret Display (shown after creation or regeneration) -->
@@ -261,7 +274,7 @@
         <h3 class="font-bold text-lg mb-4">Edit Agent Token</h3>
         <div class="space-y-4">
           <label class="form-control"><span class="label-text font-medium">Token Name</span><input v-model="editForm.name" class="input input-bordered w-full" /></label>
-          <label class="form-control"><span class="label-text font-medium">Expires In</span><select v-model="editForm.expiresIn" class="select select-bordered w-full"><option value="168h">7 days</option><option value="720h">30 days</option><option value="2160h">90 days</option><option value="8760h">365 days</option></select></label>
+          <label class="form-control"><span class="label-text font-medium">Expires In</span><select v-model="editForm.expiresIn" class="select select-bordered w-full" data-test="edit-token-expiry"><option value="">Keep existing expiration</option><option value="never">Never (non-expiring)</option><option value="168h">7 days</option><option value="720h">30 days</option><option value="2160h">90 days</option><option value="8760h">365 days</option></select></label>
           <div class="form-control"><span class="label-text font-medium">Allowed Servers</span><label class="flex gap-2"><input v-model="editForm.allServers" type="checkbox" class="checkbox checkbox-sm" /> All servers</label><div v-if="!editForm.allServers" class="max-h-32 overflow-y-auto"> <label v-for="server in availableServers" :key="server.name" class="flex gap-2"><input v-model="editForm.selectedServers" type="checkbox" :value="server.name" class="checkbox checkbox-sm" /> {{ server.name }}</label></div></div>
           <div class="form-control"><span class="label-text font-medium">Access Profiles</span><select v-model="editForm.accessProfiles" multiple class="select select-bordered w-full min-h-24"><option v-for="profile in profilesStore.profiles" :key="profile.name" :value="profile.name">{{ profile.name }}</option></select></div>
           <div class="form-control"><span class="label-text font-medium">Permissions</span><label v-for="permission in ['read', 'write', 'destructive']" :key="permission" class="flex gap-2"><input v-model="editForm.permissions" type="checkbox" :value="permission" :disabled="permission === 'read'" class="checkbox checkbox-sm" /> {{ permission }}</label></div>
@@ -450,7 +463,7 @@ const copied = ref(false)
 const createDialog = ref<HTMLDialogElement | null>(null)
 const editDialog = ref<HTMLDialogElement | null>(null)
 const editingToken = ref(false)
-const editForm = ref({ name: '', allServers: true, selectedServers: [] as string[], permissions: ['read'] as string[], expiresIn: '720h', accessProfiles: [] as string[] })
+const editForm = ref({ name: '', allServers: true, selectedServers: [] as string[], permissions: ['read'] as string[], expiresIn: '', accessProfiles: [] as string[] })
 const editOriginalName = ref('')
 
 const createForm = ref({
@@ -490,6 +503,8 @@ const expiredOrRevokedCount = computed(() => {
   return tokens.value.filter(t => t.revoked || isExpired(t)).length
 })
 
+const hasManagedTokens = computed(() => tokens.value.some(isManagedToken))
+
 // KPI-card-driven filter (issue #436): 'all' | 'active' | 'expired'
 const tokenFilter = ref<'all' | 'active' | 'expired'>('all')
 
@@ -504,12 +519,29 @@ const filteredTokens = computed(() => {
 })
 
 // Helper functions
+const managedTokenHelp = 'Managed tokens can only be changed through Bot Profile assignments'
+
+function isManagedTokenName(name: string): boolean {
+  return name.startsWith('runabot-')
+}
+
+function isManagedToken(token: AgentTokenInfo): boolean {
+  return isManagedTokenName(token.name)
+}
+
+function isNonExpiring(expiresAt?: string | null): boolean {
+  if (!expiresAt) return true
+  const date = new Date(expiresAt)
+  return Number.isNaN(date.getTime()) || date.getUTCFullYear() <= 1
+}
+
 function isExpired(token: AgentTokenInfo): boolean {
+  if (isNonExpiring(token.expires_at)) return false
   return new Date(token.expires_at) < new Date()
 }
 
 function isExpiringSoon(token: AgentTokenInfo): boolean {
-  if (token.revoked || isExpired(token)) return false
+  if (token.revoked || isNonExpiring(token.expires_at) || isExpired(token)) return false
   const expiresAt = new Date(token.expires_at)
   const now = new Date()
   const hoursLeft = (expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60)
@@ -518,6 +550,10 @@ function isExpiringSoon(token: AgentTokenInfo): boolean {
 
 function formatDate(dateStr: string): string {
   return formatDateTimeShort(dateStr)
+}
+
+function formatExpiry(dateStr: string): string {
+  return isNonExpiring(dateStr) ? 'Never' : formatDate(dateStr)
 }
 
 function permissionBadgeClass(perm: string): string {
@@ -644,8 +680,9 @@ async function handleCreate() {
 }
 
 function openEditDialog(token: AgentTokenInfo) {
+  if (isManagedToken(token)) return
   editOriginalName.value = token.name
-  editForm.value = { name: token.name, allServers: token.allowed_servers.includes('*'), selectedServers: token.allowed_servers.filter(s => s !== '*'), permissions: [...token.permissions], expiresIn: '720h', accessProfiles: [...(token.access_profiles || [])] }
+  editForm.value = { name: token.name, allServers: token.allowed_servers.includes('*'), selectedServers: token.allowed_servers.filter(s => s !== '*'), permissions: [...token.permissions], expiresIn: '', accessProfiles: [...(token.access_profiles || [])] }
   editDialog.value?.showModal()
 }
 
@@ -664,6 +701,7 @@ async function saveEdit() {
 
 // Regenerate token
 async function handleRegenerate(name: string) {
+  if (isManagedTokenName(name)) return
   if (!confirm(`Regenerate the secret for token "${name}"? The old secret will stop working immediately.`)) {
     return
   }
@@ -697,7 +735,10 @@ async function handleRegenerate(name: string) {
 
 // Revoke token
 async function handleRevoke(name: string) {
-  if (!confirm(`Revoke token "${name}"? This action cannot be undone.`)) {
+  const prompt = isManagedTokenName(name)
+    ? `Revoke managed token "${name}"? This disables the generated credential, and Runabot will not automatically repair or recreate it.`
+    : `Revoke token "${name}"? This action cannot be undone.`
+  if (!confirm(prompt)) {
     return
   }
 
@@ -729,6 +770,7 @@ async function handleRevoke(name: string) {
 
 // Permanently delete a (revoked or expired) token, freeing its name for reuse
 async function handleDelete(name: string) {
+  if (isManagedTokenName(name)) return
   if (!confirm(`Permanently delete token "${name}"? This removes it completely and frees the name for reuse. This action cannot be undone.`)) {
     return
   }

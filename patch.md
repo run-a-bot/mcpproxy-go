@@ -192,3 +192,50 @@ telemetry.
 - The web UI does not render the telemetry notice when telemetry.enabled is
   false.
 - The notice remains available when telemetry.enabled is true.
+
+### 5. Preserve managed agent-token credentials
+
+#### background
+
+Editing an agent token in the dashboard silently replaced its expiration with
+30 days from the edit, even when the token was permanent or had a different
+finite expiration. Runabot-managed tokens could also be edited, regenerated,
+or permanently deleted through the proxied dashboard, desynchronizing the
+credential stored by the orchestrator. Managed tokens must retain their secret
+and expiration unless the user explicitly revokes the generated credential as
+an opt-out.
+
+#### files
+
+##### internal/httpapi/tokens.go (modify)
+
+Preserve the existing expiration on token updates when expires_in is omitted,
+empty, or whitespace-only, while retaining explicit duration and never-expire
+updates.
+
+##### internal/httpapi/tokens_test.go (modify)
+
+Verify exact expiration preservation for omitted and blank updates and verify
+that an explicit never value still clears a finite expiration.
+
+##### frontend/src/views/AgentTokens.vue (modify)
+
+Represent zero-time expiration as an active, non-expiring token; default edits
+to keeping the exact existing expiration; and identify Runabot-managed tokens.
+Disable managed-token editing, regeneration, and permanent deletion while
+retaining soft revocation as the intentional user opt-out mechanism.
+
+##### frontend/tests/unit/agent-tokens-managed.spec.ts (create)
+
+Verify non-expiring status, managed-token action restrictions, soft revocation,
+and expiry preservation in the edit form.
+
+#### verify
+
+- Editing a token without selecting a new expiration preserves its exact
+  expires_at timestamp.
+- Selecting Never explicitly converts a finite token into a non-expiring one.
+- Zero-time tokens display Never and remain Active.
+- Runabot-managed tokens cannot be edited, regenerated, or permanently deleted
+  through the dashboard.
+- Runabot-managed tokens can be soft-revoked as a durable user opt-out.
