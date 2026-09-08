@@ -145,6 +145,41 @@
             </select>
           </div>
 
+          <!-- Select by pattern (Fast Wildcard Selection UX) -->
+          <div class="form-control min-w-[240px]">
+            <label class="label py-1">
+              <span class="label-text text-xs">Select by pattern (e.g. get_*, *issue*)</span>
+            </label>
+            <div class="join">
+              <input
+                v-model="selectPattern"
+                type="text"
+                placeholder="get_*issue*, list_*"
+                class="input input-bordered input-sm join-item w-full"
+                data-test="pattern-select-input"
+                @keydown.enter.prevent="applyPatternSelection(true)"
+              />
+              <button
+                type="button"
+                @click="applyPatternSelection(true)"
+                class="btn btn-sm btn-primary join-item"
+                data-test="pattern-select-btn"
+                title="Select matching tools"
+              >
+                Select
+              </button>
+              <button
+                type="button"
+                @click="applyPatternSelection(false)"
+                class="btn btn-sm btn-ghost join-item border-base-300"
+                data-test="pattern-deselect-btn"
+                title="Deselect matching tools"
+              >
+                Deselect
+              </button>
+            </div>
+          </div>
+
           <!-- Clear Filters -->
           <button v-if="hasActiveFilters" @click="clearFilters" class="btn btn-sm btn-ghost">
             Clear Filters
@@ -202,6 +237,25 @@
         >
           <span v-if="batchLoading" class="loading loading-spinner loading-xs"></span>
           Reject
+        </button>
+        <button
+          @click="openBatchOverrideModal"
+          :disabled="batchLoading"
+          class="btn btn-sm btn-info"
+          data-test="batch-override"
+          title="Customize classification and behavior hints for all selected tools"
+        >
+          Edit selected
+        </button>
+        <button
+          @click="batchResetOverrides"
+          :disabled="batchLoading"
+          class="btn btn-sm btn-outline"
+          data-test="batch-reset-override"
+          title="Reset overrides to upstream server defaults"
+        >
+          <span v-if="batchLoading" class="loading loading-spinner loading-xs"></span>
+          Reset overrides
         </button>
         <button @click="selectedKeys.clear()" class="btn btn-sm btn-ghost ml-auto">
           Clear selection
@@ -356,6 +410,7 @@
                 </td>
                 <td>
                   <code class="text-xs bg-base-200 px-1.5 py-0.5 rounded">{{ tool.name }}</code>
+                  <span v-if="tool.is_custom_override" class="badge badge-xs badge-info ml-1.5" title="Custom override applied">custom</span>
                 </td>
                 <td>
                   <router-link
@@ -470,11 +525,12 @@
 
     <!-- Tool Detail Modal -->
     <div v-if="selectedTool" class="modal modal-open" @click.self="selectedTool = null">
-      <div class="modal-box max-w-3xl">
+      <div class="modal-box max-w-3xl" data-test="tool-detail-modal">
         <div class="flex justify-between items-start mb-4">
           <div>
-            <h3 class="font-bold text-lg">
+            <h3 class="font-bold text-lg flex items-center gap-2">
               <code class="text-base bg-base-200 px-2 py-1 rounded">{{ selectedTool.name }}</code>
+              <span v-if="selectedTool.is_custom_override" class="badge badge-info badge-sm">custom override</span>
             </h3>
             <div class="flex items-center gap-2 mt-2">
               <router-link :to="serverDetailPath(selectedTool.server_name)" class="link link-primary text-sm">
@@ -494,9 +550,32 @@
         </div>
 
         <div class="space-y-4">
-          <div v-if="selectedTool.description">
-            <h4 class="text-sm font-semibold mb-1 text-base-content/70">Description</h4>
-            <p class="text-sm">{{ selectedTool.description }}</p>
+          <!-- Description editor & upstream preview -->
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <h4 class="text-sm font-semibold text-base-content/70">Description</h4>
+              <span v-if="detailEditMode" class="text-xs text-base-content/50">Editing tool description</span>
+            </div>
+            <div v-if="!detailEditMode">
+              <p class="text-sm bg-base-200/50 p-3 rounded-lg border border-base-300">
+                {{ selectedTool.description || '—' }}
+              </p>
+              <p v-if="selectedTool.is_custom_override && selectedTool.original_description" class="text-xs text-base-content/60 mt-1">
+                <span class="font-medium">Original description:</span> {{ selectedTool.original_description }}
+              </p>
+            </div>
+            <div v-else class="space-y-2">
+              <textarea
+                v-model="detailForm.description"
+                rows="3"
+                class="textarea textarea-bordered w-full text-sm font-mono"
+                placeholder="Custom tool description..."
+                data-test="detail-desc-input"
+              ></textarea>
+              <p v-if="selectedTool.original_description" class="text-xs text-base-content/60">
+                <span class="font-medium">Original upstream description:</span> {{ selectedTool.original_description }}
+              </p>
+            </div>
           </div>
 
           <div class="flex gap-6 text-sm">
@@ -516,13 +595,70 @@
             </div>
           </div>
 
-          <div v-if="selectedTool.annotations && Object.keys(selectedTool.annotations).length > 0">
-            <h4 class="text-sm font-semibold mb-1 text-base-content/70">Annotations</h4>
-            <div class="flex flex-wrap gap-2">
-              <span v-if="selectedTool.annotations.readOnlyHint" class="badge badge-sm badge-info">readOnly</span>
-              <span v-if="selectedTool.annotations.destructiveHint" class="badge badge-sm badge-error">destructive</span>
-              <span v-if="selectedTool.annotations.idempotentHint" class="badge badge-sm badge-ghost">idempotent</span>
-              <span v-if="selectedTool.annotations.openWorldHint" class="badge badge-sm badge-ghost">openWorld</span>
+          <!-- Behavior Hints / Annotations -->
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <h4 class="text-sm font-semibold text-base-content/70">Behavior Hints & Annotations</h4>
+              <!-- Preset quick actions when editing -->
+              <div v-if="detailEditMode" class="flex items-center gap-1">
+                <span class="text-xs text-base-content/60 mr-1">Presets:</span>
+                <button type="button" @click="applyDetailPreset('read')" class="btn btn-xs btn-outline btn-info">Read-Only</button>
+                <button type="button" @click="applyDetailPreset('write')" class="btn btn-xs btn-outline btn-warning">Safe Write</button>
+                <button type="button" @click="applyDetailPreset('destructive')" class="btn btn-xs btn-outline btn-error">Destructive</button>
+              </div>
+            </div>
+
+            <!-- View mode -->
+            <div v-if="!detailEditMode" class="flex flex-wrap gap-2">
+              <template v-if="selectedTool.annotations && Object.keys(selectedTool.annotations).length > 0">
+                <span v-if="selectedTool.annotations.readOnlyHint" class="badge badge-sm badge-info">readOnly</span>
+                <span v-if="selectedTool.annotations.destructiveHint" class="badge badge-sm badge-error">destructive</span>
+                <span v-if="selectedTool.annotations.idempotentHint" class="badge badge-sm badge-ghost">idempotent</span>
+                <span v-if="selectedTool.annotations.openWorldHint" class="badge badge-sm badge-ghost">openWorld</span>
+              </template>
+              <span v-else class="text-xs text-base-content/40 italic">No hints defined</span>
+            </div>
+
+            <!-- Edit mode -->
+            <div v-else class="grid grid-cols-2 gap-3 bg-base-200/50 p-3 rounded-lg border border-base-300">
+              <label class="label cursor-pointer justify-start gap-2 py-1">
+                <input
+                  v-model="detailForm.readOnlyHint"
+                  type="checkbox"
+                  class="checkbox checkbox-sm checkbox-info"
+                  data-test="detail-readonly-cb"
+                  @change="onDetailReadOnlyChange"
+                />
+                <span class="label-text text-xs">readOnlyHint (safe read-only)</span>
+              </label>
+              <label class="label cursor-pointer justify-start gap-2 py-1">
+                <input
+                  v-model="detailForm.destructiveHint"
+                  type="checkbox"
+                  class="checkbox checkbox-sm checkbox-error"
+                  data-test="detail-destructive-cb"
+                  @change="onDetailDestructiveChange"
+                />
+                <span class="label-text text-xs">destructiveHint (destructive change)</span>
+              </label>
+              <label class="label cursor-pointer justify-start gap-2 py-1">
+                <input
+                  v-model="detailForm.idempotentHint"
+                  type="checkbox"
+                  class="checkbox checkbox-sm"
+                  data-test="detail-idempotent-cb"
+                />
+                <span class="label-text text-xs">idempotentHint (safe to repeat)</span>
+              </label>
+              <label class="label cursor-pointer justify-start gap-2 py-1">
+                <input
+                  v-model="detailForm.openWorldHint"
+                  type="checkbox"
+                  class="checkbox checkbox-sm"
+                  data-test="detail-openworld-cb"
+                />
+                <span class="label-text text-xs">openWorldHint (external interactions)</span>
+              </label>
             </div>
           </div>
 
@@ -537,8 +673,167 @@
           </div>
         </div>
 
+        <div class="modal-action flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <button
+              v-if="selectedTool.is_custom_override"
+              type="button"
+              @click="resetDetailOverride"
+              :disabled="detailSaving"
+              class="btn btn-sm btn-ghost text-error hover:bg-error/10"
+              data-test="detail-reset-btn"
+              title="Revert description and behavior hints to upstream defaults"
+            >
+              <span v-if="detailSaving" class="loading loading-spinner loading-xs"></span>
+              Reset to Upstream
+            </button>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <template v-if="!detailEditMode">
+              <button class="btn btn-sm btn-outline" @click="enterDetailEditMode" data-test="detail-edit-btn">
+                Edit Overrides
+              </button>
+              <button class="btn btn-sm" @click="selectedTool = null">Close</button>
+            </template>
+            <template v-else>
+              <button class="btn btn-sm btn-ghost" @click="cancelDetailEdit" :disabled="detailSaving">
+                Cancel
+              </button>
+              <button
+                class="btn btn-sm btn-primary"
+                @click="saveDetailOverride"
+                :disabled="detailSaving"
+                data-test="detail-save-btn"
+              >
+                <span v-if="detailSaving" class="loading loading-spinner loading-xs"></span>
+                Save Overrides
+              </button>
+            </template>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Batch Override Modal -->
+    <div v-if="showBatchOverrideModal" class="modal modal-open" @click.self="showBatchOverrideModal = false">
+      <div class="modal-box max-w-xl" data-test="batch-override-modal">
+        <div class="flex justify-between items-start mb-4">
+          <div>
+            <h3 class="font-bold text-lg">Batch Override Behavior Hints</h3>
+            <p class="text-sm text-base-content/70 mt-1">
+              Apply classification presets or custom hints to {{ selectedKeys.size }} selected tool{{ selectedKeys.size === 1 ? '' : 's' }}.
+            </p>
+          </div>
+          <button class="btn btn-sm btn-circle btn-ghost" @click="showBatchOverrideModal = false">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="space-y-4">
+          <!-- Presets -->
+          <div>
+            <label class="label py-1">
+              <span class="label-text font-semibold text-xs text-base-content/70">Quick Presets</span>
+            </label>
+            <div class="flex flex-wrap gap-2">
+              <button
+                type="button"
+                @click="applyBatchPreset('read')"
+                class="btn btn-sm btn-outline btn-info"
+                data-test="batch-preset-read"
+              >
+                Read-Only (readOnlyHint=true)
+              </button>
+              <button
+                type="button"
+                @click="applyBatchPreset('write')"
+                class="btn btn-sm btn-outline btn-warning"
+                data-test="batch-preset-write"
+              >
+                Safe Write (readOnly=false, destructive=false)
+              </button>
+              <button
+                type="button"
+                @click="applyBatchPreset('destructive')"
+                class="btn btn-sm btn-outline btn-error"
+                data-test="batch-preset-destructive"
+              >
+                Destructive (destructiveHint=true)
+              </button>
+            </div>
+          </div>
+
+          <!-- Hints checkboxes -->
+          <div class="bg-base-200/50 p-4 rounded-lg border border-base-300 space-y-2">
+            <label class="label cursor-pointer justify-start gap-3 py-1">
+              <input
+                v-model="batchForm.readOnlyHint"
+                type="checkbox"
+                class="checkbox checkbox-sm checkbox-info"
+                data-test="batch-readonly-cb"
+                @change="onBatchReadOnlyChange"
+              />
+              <div>
+                <div class="text-sm font-medium">readOnlyHint</div>
+                <div class="text-xs text-base-content/60">Marks tools as purely safe query/inspection operations</div>
+              </div>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 py-1">
+              <input
+                v-model="batchForm.destructiveHint"
+                type="checkbox"
+                class="checkbox checkbox-sm checkbox-error"
+                data-test="batch-destructive-cb"
+                @change="onBatchDestructiveChange"
+              />
+              <div>
+                <div class="text-sm font-medium">destructiveHint</div>
+                <div class="text-xs text-base-content/60">Marks tools as irreversible mutations (e.g. drop, delete, wipe)</div>
+              </div>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 py-1">
+              <input
+                v-model="batchForm.idempotentHint"
+                type="checkbox"
+                class="checkbox checkbox-sm"
+                data-test="batch-idempotent-cb"
+              />
+              <div>
+                <div class="text-sm font-medium">idempotentHint</div>
+                <div class="text-xs text-base-content/60">Marks tools that can safely be executed multiple times</div>
+              </div>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3 py-1">
+              <input
+                v-model="batchForm.openWorldHint"
+                type="checkbox"
+                class="checkbox checkbox-sm"
+                data-test="batch-openworld-cb"
+              />
+              <div>
+                <div class="text-sm font-medium">openWorldHint</div>
+                <div class="text-xs text-base-content/60">Marks tools that interact with unpredictable external environments</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
         <div class="modal-action">
-          <button class="btn btn-sm" @click="selectedTool = null">Close</button>
+          <button class="btn btn-sm btn-ghost" @click="showBatchOverrideModal = false" :disabled="batchOverrideSaving">
+            Cancel
+          </button>
+          <button
+            class="btn btn-sm btn-primary"
+            @click="saveBatchOverride"
+            :disabled="batchOverrideSaving"
+            data-test="batch-override-save"
+          >
+            <span v-if="batchOverrideSaving" class="loading loading-spinner loading-xs"></span>
+            Apply Overrides
+          </button>
         </div>
       </div>
     </div>
@@ -620,9 +915,39 @@ const pageSize = ref(25)
 
 // ---- Selection ----
 const selectedKeys = ref(new Set<string>())
+const selectPattern = ref('')
 
 function toolKey(tool: GlobalTool): string {
   return `${tool.server_name}\x00${tool.name}`
+}
+
+function matchesPattern(name: string, pattern: string): boolean {
+  if (!pattern) return false
+  const subPatterns = pattern.split(',').map(s => s.trim()).filter(Boolean)
+  if (subPatterns.length === 0) return false
+
+  return subPatterns.some(sub => {
+    const regexStr = '^' + sub
+      .replace(/[-[\]{}()+.,\\^$|#\s]/g, '\\$&')
+      .replace(/\*/g, '.*')
+      .replace(/\?/g, '.') + '$'
+    try {
+      const re = new RegExp(regexStr, 'i')
+      return re.test(name)
+    } catch {
+      return false
+    }
+  })
+}
+
+function applyPatternSelection(select: boolean) {
+  if (!selectPattern.value.trim()) return
+  const matchedTools = allTools.value.filter(t => matchesPattern(t.name, selectPattern.value))
+  if (select) {
+    matchedTools.forEach(t => selectedKeys.value.add(toolKey(t)))
+  } else {
+    matchedTools.forEach(t => selectedKeys.value.delete(toolKey(t)))
+  }
 }
 
 const allPageSelected = computed(() =>
@@ -756,6 +1081,165 @@ async function batchApproval(action: 'approve' | 'reject') {
   batchLoading.value = false
 
   // Refresh to get authoritative approval state + stats.
+  await loadTools()
+}
+
+// ---- Batch Override & Reset ----
+const showBatchOverrideModal = ref(false)
+const batchOverrideSaving = ref(false)
+const batchForm = ref({
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: false,
+})
+
+function openBatchOverrideModal() {
+  batchForm.value = {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: false,
+  }
+  showBatchOverrideModal.value = true
+}
+
+function applyBatchPreset(preset: 'read' | 'write' | 'destructive') {
+  if (preset === 'read') {
+    batchForm.value.readOnlyHint = true
+    batchForm.value.destructiveHint = false
+    batchForm.value.idempotentHint = true
+  } else if (preset === 'write') {
+    batchForm.value.readOnlyHint = false
+    batchForm.value.destructiveHint = false
+  } else if (preset === 'destructive') {
+    batchForm.value.readOnlyHint = false
+    batchForm.value.destructiveHint = true
+  }
+}
+
+function onBatchReadOnlyChange() {
+  if (batchForm.value.readOnlyHint) {
+    batchForm.value.destructiveHint = false
+  }
+}
+
+function onBatchDestructiveChange() {
+  if (batchForm.value.destructiveHint) {
+    batchForm.value.readOnlyHint = false
+  }
+}
+
+async function saveBatchOverride() {
+  if (batchOverrideSaving.value || selectedKeys.value.size === 0) return
+  batchOverrideSaving.value = true
+
+  const byServer = new Map<string, string[]>()
+  for (const tool of allTools.value) {
+    if (!selectedKeys.value.has(toolKey(tool))) continue
+    const names = byServer.get(tool.server_name) || []
+    names.push(tool.name)
+    byServer.set(tool.server_name, names)
+  }
+
+  const annotations = {
+    readOnlyHint: batchForm.value.readOnlyHint,
+    destructiveHint: batchForm.value.destructiveHint,
+    idempotentHint: batchForm.value.idempotentHint,
+    openWorldHint: batchForm.value.openWorldHint,
+  }
+
+  let totalTools = 0
+  byServer.forEach(names => { totalTools += names.length })
+
+  const failedServers: string[] = []
+  await Promise.all(
+    Array.from(byServer.entries()).map(async ([server, names]) => {
+      try {
+        const resp = await api.overrideTools({
+          server_name: server,
+          tools: names,
+          annotations,
+        })
+        if (!resp.success) {
+          failedServers.push(`${server} (${resp.error || 'failed'})`)
+        }
+      } catch (err) {
+        failedServers.push(`${server} (${err instanceof Error ? err.message : 'failed'})`)
+      }
+    })
+  )
+
+  batchOverrideSaving.value = false
+  showBatchOverrideModal.value = false
+
+  if (failedServers.length === 0) {
+    systemStore.addToast({
+      type: 'success',
+      title: 'Batch overrides applied',
+      message: `Updated classifications for ${totalTools} tool${totalTools === 1 ? '' : 's'} across ${byServer.size} server${byServer.size === 1 ? '' : 's'}`,
+    })
+  } else {
+    systemStore.addToast({
+      type: 'error',
+      title: 'Batch override errors',
+      message: `Failed on: ${failedServers.join(', ')}`,
+    })
+  }
+
+  selectedKeys.value.clear()
+  await loadTools()
+}
+
+async function batchResetOverrides() {
+  if (batchLoading.value || selectedKeys.value.size === 0) return
+  batchLoading.value = true
+
+  const byServer = new Map<string, string[]>()
+  for (const tool of allTools.value) {
+    if (!selectedKeys.value.has(toolKey(tool))) continue
+    const names = byServer.get(tool.server_name) || []
+    names.push(tool.name)
+    byServer.set(tool.server_name, names)
+  }
+
+  let totalTools = 0
+  byServer.forEach(names => { totalTools += names.length })
+
+  const failedServers: string[] = []
+  await Promise.all(
+    Array.from(byServer.entries()).map(async ([server, names]) => {
+      try {
+        const resp = await api.resetToolOverrides({
+          server_name: server,
+          tools: names,
+        })
+        if (!resp.success) {
+          failedServers.push(`${server} (${resp.error || 'failed'})`)
+        }
+      } catch (err) {
+        failedServers.push(`${server} (${err instanceof Error ? err.message : 'failed'})`)
+      }
+    })
+  )
+
+  batchLoading.value = false
+
+  if (failedServers.length === 0) {
+    systemStore.addToast({
+      type: 'success',
+      title: 'Overrides reset',
+      message: `Reverted ${totalTools} tool${totalTools === 1 ? '' : 's'} across ${byServer.size} server${byServer.size === 1 ? '' : 's'} to upstream defaults`,
+    })
+  } else {
+    systemStore.addToast({
+      type: 'error',
+      title: 'Reset errors',
+      message: `Failed on: ${failedServers.join(', ')}`,
+    })
+  }
+
+  selectedKeys.value.clear()
   await loadTools()
 }
 
@@ -1046,8 +1530,158 @@ async function loadTools() {
   }
 }
 
+// ---- Detail Modal Editing ----
+const detailEditMode = ref(false)
+const detailSaving = ref(false)
+const detailForm = ref({
+  description: '',
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: false,
+})
+
 function openDetail(tool: GlobalTool) {
   selectedTool.value = tool
+  detailEditMode.value = false
+  initDetailForm(tool)
+}
+
+function initDetailForm(tool: GlobalTool) {
+  detailForm.value = {
+    description: tool.description || '',
+    readOnlyHint: !!tool.annotations?.readOnlyHint,
+    destructiveHint: !!tool.annotations?.destructiveHint,
+    idempotentHint: !!tool.annotations?.idempotentHint,
+    openWorldHint: !!tool.annotations?.openWorldHint,
+  }
+}
+
+function enterDetailEditMode() {
+  if (!selectedTool.value) return
+  initDetailForm(selectedTool.value)
+  detailEditMode.value = true
+}
+
+function cancelDetailEdit() {
+  if (selectedTool.value) {
+    initDetailForm(selectedTool.value)
+  }
+  detailEditMode.value = false
+}
+
+function applyDetailPreset(preset: 'read' | 'write' | 'destructive') {
+  if (preset === 'read') {
+    detailForm.value.readOnlyHint = true
+    detailForm.value.destructiveHint = false
+    detailForm.value.idempotentHint = true
+  } else if (preset === 'write') {
+    detailForm.value.readOnlyHint = false
+    detailForm.value.destructiveHint = false
+  } else if (preset === 'destructive') {
+    detailForm.value.readOnlyHint = false
+    detailForm.value.destructiveHint = true
+  }
+}
+
+function onDetailReadOnlyChange() {
+  if (detailForm.value.readOnlyHint) {
+    detailForm.value.destructiveHint = false
+  }
+}
+
+function onDetailDestructiveChange() {
+  if (detailForm.value.destructiveHint) {
+    detailForm.value.readOnlyHint = false
+  }
+}
+
+async function saveDetailOverride() {
+  if (!selectedTool.value || detailSaving.value) return
+  detailSaving.value = true
+
+  const tool = selectedTool.value
+  const annotations = {
+    readOnlyHint: detailForm.value.readOnlyHint,
+    destructiveHint: detailForm.value.destructiveHint,
+    idempotentHint: detailForm.value.idempotentHint,
+    openWorldHint: detailForm.value.openWorldHint,
+  }
+
+  try {
+    const resp = await api.overrideTools({
+      server_name: tool.server_name,
+      tools: [tool.name],
+      description: detailForm.value.description,
+      annotations,
+    })
+
+    if (resp.success) {
+      systemStore.addToast({
+        type: 'success',
+        title: 'Override saved',
+        message: `Updated overrides for ${tool.server_name}:${tool.name}`,
+      })
+      // Update modal model inline
+      tool.description = detailForm.value.description
+      tool.annotations = annotations
+      tool.is_custom_override = true
+      detailEditMode.value = false
+      // Background reload full tool catalogue
+      loadTools()
+    } else {
+      systemStore.addToast({
+        type: 'error',
+        title: 'Failed to save override',
+        message: resp.error || 'Server rejected override update',
+      })
+    }
+  } catch (err) {
+    systemStore.addToast({
+      type: 'error',
+      title: 'Failed to save override',
+      message: err instanceof Error ? err.message : 'Unknown error',
+    })
+  } finally {
+    detailSaving.value = false
+  }
+}
+
+async function resetDetailOverride() {
+  if (!selectedTool.value || detailSaving.value) return
+  detailSaving.value = true
+
+  const tool = selectedTool.value
+  try {
+    const resp = await api.resetToolOverrides({
+      server_name: tool.server_name,
+      tools: [tool.name],
+    })
+
+    if (resp.success) {
+      systemStore.addToast({
+        type: 'success',
+        title: 'Override reset',
+        message: `Reverted ${tool.server_name}:${tool.name} to upstream defaults`,
+      })
+      selectedTool.value = null
+      await loadTools()
+    } else {
+      systemStore.addToast({
+        type: 'error',
+        title: 'Failed to reset override',
+        message: resp.error || 'Server rejected reset',
+      })
+    }
+  } catch (err) {
+    systemStore.addToast({
+      type: 'error',
+      title: 'Failed to reset override',
+      message: err instanceof Error ? err.message : 'Unknown error',
+    })
+  } finally {
+    detailSaving.value = false
+  }
 }
 
 function clearFilters() {

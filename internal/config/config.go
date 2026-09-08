@@ -749,6 +749,9 @@ type ServerConfig struct {
 	EnabledTools  []string `json:"enabled_tools,omitempty" mapstructure:"enabled_tools"`   // Allowlist: only these tools are exposed; mutually exclusive with disabled_tools
 	DisabledTools []string `json:"disabled_tools,omitempty" mapstructure:"disabled_tools"` // Denylist: these tools are hidden; mutually exclusive with enabled_tools
 
+	// ToolOverrides maps explicit tool names to manual overrides (description and/or annotations).
+	ToolOverrides map[string]*ToolOverride `json:"tool_overrides,omitempty" mapstructure:"tool-overrides"`
+
 	// SourceRegistryID records which registry this server was added from (empty
 	// for manually-configured servers). MCP-866: surfaced in the approval /
 	// quarantine view so a reviewer can see a server's origin.
@@ -1382,15 +1385,16 @@ func ConvertFromCursorFormat(cursorConfig *CursorMCPConfig) []*ServerConfig {
 
 // ToolMetadata represents tool information stored in the index
 type ToolMetadata struct {
-	Name             string           `json:"name"`
-	ServerName       string           `json:"server_name"`
-	Description      string           `json:"description"`
-	ParamsJSON       string           `json:"params_json"`
-	OutputSchemaJSON string           `json:"output_schema_json,omitempty"` // declared output schema, raw JSON bytes (Spec 056)
-	Hash             string           `json:"hash"`
-	Created          time.Time        `json:"created"`
-	Updated          time.Time        `json:"updated"`
-	Annotations      *ToolAnnotations `json:"annotations,omitempty"`
+	Name                string           `json:"name"`
+	ServerName          string           `json:"server_name"`
+	Description         string           `json:"description"`
+	OriginalDescription string           `json:"original_description,omitempty"`
+	ParamsJSON          string           `json:"params_json"`
+	OutputSchemaJSON    string           `json:"output_schema_json,omitempty"` // declared output schema, raw JSON bytes (Spec 056)
+	Hash                string           `json:"hash"`
+	Created             time.Time        `json:"created"`
+	Updated             time.Time        `json:"updated"`
+	Annotations         *ToolAnnotations `json:"annotations,omitempty"`
 }
 
 // ToolAnnotations represents MCP tool behavior hints
@@ -1400,6 +1404,34 @@ type ToolAnnotations struct {
 	DestructiveHint *bool  `json:"destructiveHint,omitempty"`
 	IdempotentHint  *bool  `json:"idempotentHint,omitempty"`
 	OpenWorldHint   *bool  `json:"openWorldHint,omitempty"`
+}
+
+// ToolOverride represents user-defined custom metadata for a tool.
+type ToolOverride struct {
+	Description string           `json:"description,omitempty" mapstructure:"description"`
+	Annotations *ToolAnnotations `json:"annotations,omitempty" mapstructure:"annotations"`
+}
+
+// ResolveToolOverride resolves a tool's effective description and annotations considering manual overrides.
+func (s *ServerConfig) ResolveToolOverride(toolName string, upstreamDesc string, upstreamAnn *ToolAnnotations) (desc string, ann *ToolAnnotations, isCustom bool) {
+	desc = upstreamDesc
+	ann = upstreamAnn
+	if s == nil || len(s.ToolOverrides) == 0 {
+		return desc, ann, false
+	}
+	override, ok := s.ToolOverrides[toolName]
+	if !ok || override == nil {
+		return desc, ann, false
+	}
+	if override.Description != "" {
+		desc = override.Description
+		isCustom = true
+	}
+	if override.Annotations != nil {
+		ann = override.Annotations
+		isCustom = true
+	}
+	return desc, ann, isCustom
 }
 
 // IntentDeclarationConfig controls intent validation behavior for tool calls

@@ -377,6 +377,7 @@ func TestSaveServerSyncFieldCoverage(t *testing.T) {
 		// the operator stated anything.
 		"quarantineExplicitlySet": true,
 		"ExposePrompts":           true, // persisted to BBolt so the per-server override survives restarts
+		"ToolOverrides":           true, // persisted to BBolt for custom tool classification and descriptions
 	}
 
 	// Get all fields from ServerConfig

@@ -140,6 +140,7 @@ func (m *Manager) SaveUpstreamServer(serverConfig *config.ServerConfig) error {
 		LauncherWaitTimeout:    serverConfig.LauncherWaitTimeout,
 		EnabledTools:           serverConfig.EnabledTools,
 		DisabledTools:          serverConfig.DisabledTools,
+		ToolOverrides:          serverConfig.ToolOverrides,
 
 		SourceRegistryID:         serverConfig.SourceRegistryID,
 		SourceRegistryProvenance: serverConfig.SourceRegistryProvenance,
@@ -187,6 +188,7 @@ func (m *Manager) GetUpstreamServer(name string) (*config.ServerConfig, error) {
 		LauncherWaitTimeout:    record.LauncherWaitTimeout,
 		EnabledTools:           record.EnabledTools,
 		DisabledTools:          record.DisabledTools,
+		ToolOverrides:          record.ToolOverrides,
 
 		SourceRegistryID:         record.SourceRegistryID,
 		SourceRegistryProvenance: record.SourceRegistryProvenance,
@@ -234,6 +236,7 @@ func (m *Manager) ListUpstreamServers() ([]*config.ServerConfig, error) {
 			LauncherWaitTimeout:    record.LauncherWaitTimeout,
 			EnabledTools:           record.EnabledTools,
 			DisabledTools:          record.DisabledTools,
+			ToolOverrides:          record.ToolOverrides,
 
 			SourceRegistryID:         record.SourceRegistryID,
 			SourceRegistryProvenance: record.SourceRegistryProvenance,
@@ -295,6 +298,7 @@ func (m *Manager) ListQuarantinedUpstreamServers() ([]*config.ServerConfig, erro
 				Isolation:     record.Isolation,
 				EnabledTools:  record.EnabledTools,
 				DisabledTools: record.DisabledTools,
+				ToolOverrides: record.ToolOverrides,
 
 				SourceRegistryID:         record.SourceRegistryID,
 				SourceRegistryProvenance: record.SourceRegistryProvenance,

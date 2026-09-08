@@ -285,3 +285,57 @@ Allow the `retrieve_tools` description change in each relevant snapshot delta.
 - Agents are instructed how to enumerate tools without guessing search terms.
 - Default, retrieve-tools, and code-execution tool-list snapshots accept the
   intentional `retrieve_tools` description change.
+
+### 7. Add manual tool classification and description overrides
+
+#### background
+
+Operators need to correct upstream tool descriptions and behavior hints without
+waiting for the upstream server to change. Persist explicit per-tool overrides,
+apply them during discovery and indexing, and expose batch editing and wildcard
+selection in the Tools UI.
+
+#### files
+
+##### internal/config/config.go (modify)
+
+Add persisted `ToolOverride` configuration and resolve effective descriptions
+and annotations against upstream metadata.
+
+##### internal/storage/models.go (modify)
+
+Persist per-server tool overrides in BBolt and retain them through configuration
+snapshots and copies.
+
+##### internal/upstream/core/client.go (modify)
+
+Apply effective metadata at discovery, preserve upstream descriptions for the
+UI, and include effective descriptions and annotations in the reindex hash.
+
+##### internal/runtime/lifecycle.go (modify)
+
+Persist updates, refresh active clients and discovery state, and reindex after
+setting or resetting overrides.
+
+##### internal/httpapi/server.go (modify)
+
+Add explicit override and reset endpoints and return custom-override state in
+tool responses.
+
+##### frontend/src/views/Tools.vue (modify)
+
+Add wildcard selection, batch hint editing, per-tool description and annotation
+editing, reset actions, and custom-override badges.
+
+##### internal/*/*tool_override*_test.go (create/modify)
+
+Cover resolution, storage/API payloads, effective metadata hashing, reindexing,
+original descriptions, and UI selection and editing flows.
+
+#### verify
+
+- Overrides persist across configuration saves and restarts.
+- Custom descriptions are returned by discovery and indexed for retrieval.
+- Custom annotations affect derived tool classification and dispatch variants.
+- Wildcard selection and batch/detail override workflows submit explicit tool
+  names to the API.

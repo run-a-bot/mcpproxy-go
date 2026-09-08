@@ -639,6 +639,19 @@ func CopyServerConfig(src *ServerConfig) *ServerConfig {
 			dst.Headers[k] = v
 		}
 	}
+	if src.ToolOverrides != nil {
+		dst.ToolOverrides = make(map[string]*ToolOverride, len(src.ToolOverrides))
+		for k, v := range src.ToolOverrides {
+			if v != nil {
+				overrideCopy := *v
+				if v.Annotations != nil {
+					annCopy := *v.Annotations
+					overrideCopy.Annotations = &annCopy
+				}
+				dst.ToolOverrides[k] = &overrideCopy
+			}
+		}
+	}
 
 	// Copy *bool by value (not pointer) to avoid shared state (MCP-2930)
 	if src.AutoApproveToolChanges != nil {

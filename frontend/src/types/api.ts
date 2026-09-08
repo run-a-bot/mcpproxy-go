@@ -344,6 +344,8 @@ export interface GlobalTool {
   held_reason?: string     // "scan_findings" (threat) | "scan_coverage" (precaution)
   held_verdict?: string    // "dangerous" | "warnings" | "clean"
   held_signals?: string[]  // matched deterministic check ids, producer order, ≤16
+  is_custom_override?: boolean
+  original_description?: string
   // derived locally: enabled = !disabled && !config_denied
 }
 
@@ -359,6 +361,19 @@ export interface GlobalToolsResponse {
   stats: GlobalToolsStats
   partial: boolean
   failed_servers: string[]
+}
+
+// Tool Override requests
+export interface OverrideToolsRequest {
+  server_name: string
+  tools: string[]
+  description?: string
+  annotations?: ToolAnnotation
+}
+
+export interface ResetToolOverridesRequest {
+  server_name: string
+  tools: string[]
 }
 
 // Tool Annotation types
@@ -406,6 +421,8 @@ export interface Tool {
   approval_status?: string
   disabled?: boolean
   config_denied?: boolean
+  is_custom_override?: boolean
+  original_description?: string
 }
 
 // Tool approval types (Spec 032)

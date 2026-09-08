@@ -8,12 +8,22 @@ import (
 	"strings"
 )
 
+// ToolAnnotations represents MCP tool behavior hints for hashing
+type ToolAnnotations struct {
+	Title           string `json:"title,omitempty"`
+	ReadOnlyHint    *bool  `json:"readOnlyHint,omitempty"`
+	DestructiveHint *bool  `json:"destructiveHint,omitempty"`
+	IdempotentHint  *bool  `json:"idempotentHint,omitempty"`
+	OpenWorldHint   *bool  `json:"openWorldHint,omitempty"`
+}
+
 type toolHashContract struct {
-	ServerName       string          `json:"server_name"`
-	ToolName         string          `json:"tool_name"`
-	Description      string          `json:"description"`
-	InputSchema      json.RawMessage `json:"input_schema,omitempty"`
-	OutputSchemaJSON json.RawMessage `json:"output_schema,omitempty"`
+	ServerName       string           `json:"server_name"`
+	ToolName         string           `json:"tool_name"`
+	Description      string           `json:"description"`
+	InputSchema      json.RawMessage  `json:"input_schema,omitempty"`
+	OutputSchemaJSON json.RawMessage  `json:"output_schema,omitempty"`
+	Annotations      *ToolAnnotations `json:"annotations,omitempty"`
 }
 
 // ToolHash computes SHA-256 hash for tool change detection.
@@ -27,6 +37,12 @@ func ToolHash(serverName, toolName, description string, parametersSchema interfa
 // agent and therefore belongs to the human-approved tool contract.
 // Format: sha256(canonical JSON of serverName, toolName, description, input schema, output schema)
 func ToolHashWithOutputSchema(serverName, toolName, description string, parametersSchema interface{}, outputSchemaJSON string) (string, error) {
+	return ToolHashWithAnnotations(serverName, toolName, description, parametersSchema, outputSchemaJSON, nil)
+}
+
+// ToolHashWithAnnotations computes SHA-256 hash for the full tool contract including effective annotations.
+// Format: sha256(canonical JSON of serverName, toolName, description, input schema, output schema, annotations)
+func ToolHashWithAnnotations(serverName, toolName, description string, parametersSchema interface{}, outputSchemaJSON string, annotations *ToolAnnotations) (string, error) {
 	inputSchema, err := canonicalSchemaFromInterface(parametersSchema)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal parameters schema: %w", err)
@@ -43,6 +59,7 @@ func ToolHashWithOutputSchema(serverName, toolName, description string, paramete
 		Description:      description,
 		InputSchema:      inputSchema,
 		OutputSchemaJSON: outputSchema,
+		Annotations:      annotations,
 	}
 
 	contractBytes, err := json.Marshal(contract)
@@ -243,7 +260,12 @@ func ComputeToolHash(serverName, toolName, description string, inputSchema inter
 
 // ComputeToolHashWithOutputSchema computes a SHA256 hash for a tool including output schema.
 func ComputeToolHashWithOutputSchema(serverName, toolName, description string, inputSchema interface{}, outputSchemaJSON string) string {
-	hash, err := ToolHashWithOutputSchema(serverName, toolName, description, inputSchema, outputSchemaJSON)
+	return ComputeToolHashWithAnnotations(serverName, toolName, description, inputSchema, outputSchemaJSON, nil)
+}
+
+// ComputeToolHashWithAnnotations computes a SHA256 hash for a tool including output schema and annotations.
+func ComputeToolHashWithAnnotations(serverName, toolName, description string, inputSchema interface{}, outputSchemaJSON string, annotations *ToolAnnotations) string {
+	hash, err := ToolHashWithAnnotations(serverName, toolName, description, inputSchema, outputSchemaJSON, annotations)
 	if err != nil {
 		// If hashing fails, return a default hash based on server and tool name
 		fallback := StringHash(fmt.Sprintf("%s:%s", serverName, toolName))

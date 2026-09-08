@@ -11,10 +11,11 @@ import (
 
 // ToolInfo represents a cached tool definition.
 type ToolInfo struct {
-	Name        string
-	Description string
-	InputSchema map[string]interface{}
-	Annotations *config.ToolAnnotations
+	Name                string
+	Description         string
+	OriginalDescription string
+	InputSchema         map[string]interface{}
+	Annotations         *config.ToolAnnotations
 	// OutputSchemaJSON is the tool's declared output schema (raw JSON), empty
 	// when the tool declares none. Used for output-schema validation (Spec 056).
 	OutputSchemaJSON string

@@ -369,6 +369,24 @@ type Tool struct {
 	// no stored hash (no approval record yet, or a record written before
 	// hashes existed).
 	Hash string `json:"hash,omitempty"`
+	// IsCustomOverride is true when the tool has user-defined overrides (description or annotations).
+	IsCustomOverride bool `json:"is_custom_override,omitempty"`
+	// OriginalDescription is the upstream-reported description before user override (if overridden).
+	OriginalDescription string `json:"original_description,omitempty"`
+}
+
+// OverrideToolsRequest represents the payload for overriding tool classification or description.
+type OverrideToolsRequest struct {
+	ServerName  string                  `json:"server_name"`
+	Tools       []string                `json:"tools"` // Array of explicit tool names
+	Description string                  `json:"description,omitempty"`
+	Annotations *config.ToolAnnotations `json:"annotations,omitempty"`
+}
+
+// ResetToolOverridesRequest represents the payload for clearing tool overrides.
+type ResetToolOverridesRequest struct {
+	ServerName string   `json:"server_name"`
+	Tools      []string `json:"tools"` // Array of explicit tool names to reset
 }
 
 // DisabledToolStatus is the single machine-branchable reason a tool exists but

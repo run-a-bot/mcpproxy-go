@@ -135,6 +135,8 @@ type ServerController interface {
 	QuarantineServer(serverName string, quarantined bool) error
 	GetQuarantinedServers() ([]map[string]interface{}, error)
 	UnquarantineServer(serverName string) error
+	SetToolOverrides(serverName string, tools []string, description string, hints *config.ToolAnnotations) error
+	ResetToolOverrides(serverName string, tools []string) error
 	GetManagementService() interface{} // Returns the management service for unified operations
 	DiscoverServerTools(ctx context.Context, serverName string) error
 
@@ -863,6 +865,8 @@ func (s *Server) setupRoutes() {
 
 		// Global tools overview — every tool across all servers (spec 050, issue #437)
 		r.Get("/tools", s.handleGetGlobalTools)
+		r.Post("/tools/override", s.handleOverrideTools)
+		r.Post("/tools/reset-override", s.handleResetToolOverrides)
 
 		// Docker recovery status
 		r.Get("/docker/status", s.handleGetDockerStatus)
@@ -3591,6 +3595,18 @@ func (s *Server) enrichServerTools(serverID string, tools []map[string]interface
 		if hasConfigChecker {
 			typedTools[i].ConfigDenied = configChecker.IsToolConfigDenied(serverID, typedTools[i].Name)
 		}
+
+		// Check if tool has custom metadata override in ServerConfig
+		if cfg, err := s.controller.GetConfig(); err == nil && cfg != nil {
+			for _, srv := range cfg.Servers {
+				if srv != nil && srv.Name == serverID && srv.ToolOverrides != nil {
+					if _, hasOverride := srv.ToolOverrides[typedTools[i].Name]; hasOverride {
+						typedTools[i].IsCustomOverride = true
+					}
+					break
+				}
+			}
+		}
 	}
 	if firstErr != nil {
 		s.logger.Debugw("Tool approval enrichment partial", "server", serverID, "enriched", enrichedCount, "total", len(typedTools), "error", firstErr)
@@ -3714,6 +3730,66 @@ func (s *Server) handleGetGlobalTools(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.writeSuccess(w, resp)
+}
+
+// handleOverrideTools handles POST /api/v1/tools/override
+func (s *Server) handleOverrideTools(w http.ResponseWriter, r *http.Request) {
+	var req contracts.OverrideToolsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, r, http.StatusBadRequest, fmt.Sprintf("Invalid request payload: %v", err))
+		return
+	}
+
+	if req.ServerName == "" {
+		s.writeError(w, r, http.StatusBadRequest, "server_name is required")
+		return
+	}
+
+	if len(req.Tools) == 0 {
+		s.writeError(w, r, http.StatusBadRequest, "at least one tool name is required in 'tools'")
+		return
+	}
+
+	if err := s.controller.SetToolOverrides(req.ServerName, req.Tools, req.Description, req.Annotations); err != nil {
+		s.logger.Errorw("Failed to set tool overrides", "server", req.ServerName, "tools", req.Tools, "error", err)
+		s.writeError(w, r, http.StatusInternalServerError, fmt.Sprintf("Failed to set tool overrides: %v", err))
+		return
+	}
+
+	s.writeSuccess(w, map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Overrides applied to %d tools on server '%s'", len(req.Tools), req.ServerName),
+	})
+}
+
+// handleResetToolOverrides handles POST /api/v1/tools/reset-override
+func (s *Server) handleResetToolOverrides(w http.ResponseWriter, r *http.Request) {
+	var req contracts.ResetToolOverridesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.writeError(w, r, http.StatusBadRequest, fmt.Sprintf("Invalid request payload: %v", err))
+		return
+	}
+
+	if req.ServerName == "" {
+		s.writeError(w, r, http.StatusBadRequest, "server_name is required")
+		return
+	}
+
+	if len(req.Tools) == 0 {
+		s.writeError(w, r, http.StatusBadRequest, "at least one tool name is required in 'tools'")
+		return
+	}
+
+	if err := s.controller.ResetToolOverrides(req.ServerName, req.Tools); err != nil {
+		s.logger.Errorw("Failed to reset tool overrides", "server", req.ServerName, "tools", req.Tools, "error", err)
+		s.writeError(w, r, http.StatusInternalServerError, fmt.Sprintf("Failed to reset tool overrides: %v", err))
+		return
+	}
+
+	s.writeSuccess(w, map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Overrides reset for %d tools on server '%s'", len(req.Tools), req.ServerName),
+	})
 }
 
 // handleGetServerLogs godoc

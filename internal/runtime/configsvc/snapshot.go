@@ -62,6 +62,19 @@ func (s *Snapshot) Clone() *config.Config {
 					clonedSrv.DisabledTools = make([]string, len(srv.DisabledTools))
 					copy(clonedSrv.DisabledTools, srv.DisabledTools)
 				}
+				if srv.ToolOverrides != nil {
+					clonedSrv.ToolOverrides = make(map[string]*config.ToolOverride, len(srv.ToolOverrides))
+					for k, v := range srv.ToolOverrides {
+						if v != nil {
+							overrideCopy := *v
+							if v.Annotations != nil {
+								annCopy := *v.Annotations
+								overrideCopy.Annotations = &annCopy
+							}
+							clonedSrv.ToolOverrides[k] = &overrideCopy
+						}
+					}
+				}
 
 				// Clone OAuth config if present
 				if srv.OAuth != nil {
@@ -140,6 +153,28 @@ func (s *Snapshot) GetServer(name string) *config.ServerConfig {
 			if srv.Args != nil {
 				cloned.Args = make([]string, len(srv.Args))
 				copy(cloned.Args, srv.Args)
+			}
+
+			if srv.EnabledTools != nil {
+				cloned.EnabledTools = make([]string, len(srv.EnabledTools))
+				copy(cloned.EnabledTools, srv.EnabledTools)
+			}
+			if srv.DisabledTools != nil {
+				cloned.DisabledTools = make([]string, len(srv.DisabledTools))
+				copy(cloned.DisabledTools, srv.DisabledTools)
+			}
+			if srv.ToolOverrides != nil {
+				cloned.ToolOverrides = make(map[string]*config.ToolOverride, len(srv.ToolOverrides))
+				for k, v := range srv.ToolOverrides {
+					if v != nil {
+						overrideCopy := *v
+						if v.Annotations != nil {
+							annCopy := *v.Annotations
+							overrideCopy.Annotations = &annCopy
+						}
+						cloned.ToolOverrides[k] = &overrideCopy
+					}
+				}
 			}
 
 			return &cloned

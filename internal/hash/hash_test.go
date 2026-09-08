@@ -157,6 +157,41 @@ func TestToolHashWithOutputSchema_UsesStructuredEncoding(t *testing.T) {
 	assert.NotEqual(t, hash1, hash2, "Different contract field tuples must not collide through string concatenation")
 }
 
+func TestToolHashWithAnnotations(t *testing.T) {
+	inputSchema := map[string]interface{}{"type": "object"}
+	outputSchema := `{"type":"object"}`
+
+	// Nil annotations matches ToolHashWithOutputSchema
+	hDefault, err := ToolHashWithOutputSchema("server", "tool", "desc", inputSchema, outputSchema)
+	require.NoError(t, err)
+	hNilAnn, err := ToolHashWithAnnotations("server", "tool", "desc", inputSchema, outputSchema, nil)
+	require.NoError(t, err)
+	assert.Equal(t, hDefault, hNilAnn, "Nil annotations should match hash without annotations")
+
+	// Non-nil annotations changes the hash
+	isReadOnly := true
+	hWithAnn, err := ToolHashWithAnnotations("server", "tool", "desc", inputSchema, outputSchema, &ToolAnnotations{
+		ReadOnlyHint: &isReadOnly,
+	})
+	require.NoError(t, err)
+	assert.NotEqual(t, hDefault, hWithAnn, "Annotations should produce a different hash")
+
+	// Changing annotation field changes hash
+	isDestructive := true
+	hWithAnn2, err := ToolHashWithAnnotations("server", "tool", "desc", inputSchema, outputSchema, &ToolAnnotations{
+		ReadOnlyHint:    &isReadOnly,
+		DestructiveHint: &isDestructive,
+	})
+	require.NoError(t, err)
+	assert.NotEqual(t, hWithAnn, hWithAnn2, "Different annotations should produce different hashes")
+
+	// ComputeToolHashWithAnnotations works equivalently
+	computed := ComputeToolHashWithAnnotations("server", "tool", "desc", inputSchema, outputSchema, &ToolAnnotations{
+		ReadOnlyHint: &isReadOnly,
+	})
+	assert.Equal(t, hWithAnn, computed)
+}
+
 func TestComputeToolHash_DescriptionOnlyChange(t *testing.T) {
 	schema := map[string]interface{}{
 		"type": "object",

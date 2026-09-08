@@ -32,26 +32,26 @@ type mockManagementService struct{}
 
 func (m *mockManagementService) ListServers(ctx context.Context) ([]*contracts.Server, *contracts.ServerStats, error) {
 	return []*contracts.Server{
-			{
-				ID:             "test-server",
-				Name:           "test-server",
-				Protocol:       "stdio",
-				Command:        "echo",
-				Args:           []string{"hello"},
-				Enabled:        true,
-				Quarantined:    false,
-				Connected:      true,
-				Status:         "Ready",
-				ToolCount:      5,
-				ReconnectCount: 0,
-				Authenticated:  false,
-			},
-		}, &contracts.ServerStats{
-			TotalServers:       1,
-			ConnectedServers:   1,
-			QuarantinedServers: 0,
-			TotalTools:         5,
-		}, nil
+		{
+			ID:             "test-server",
+			Name:           "test-server",
+			Protocol:       "stdio",
+			Command:        "echo",
+			Args:           []string{"hello"},
+			Enabled:        true,
+			Quarantined:    false,
+			Connected:      true,
+			Status:         "Ready",
+			ToolCount:      5,
+			ReconnectCount: 0,
+			Authenticated:  false,
+		},
+	}, &contracts.ServerStats{
+		TotalServers:       1,
+		ConnectedServers:   1,
+		QuarantinedServers: 0,
+		TotalTools:         5,
+	}, nil
 }
 
 func (m *mockManagementService) EnableServer(ctx context.Context, name string, enabled bool) error {
@@ -160,6 +160,12 @@ func (m *MockServerController) GetQuarantinedServers() ([]map[string]interface{}
 	return []map[string]interface{}{}, nil
 }
 func (m *MockServerController) UnquarantineServer(_ string) error { return nil }
+func (m *MockServerController) SetToolOverrides(_ string, _ []string, _ string, _ *config.ToolAnnotations) error {
+	return nil
+}
+func (m *MockServerController) ResetToolOverrides(_ string, _ []string) error {
+	return nil
+}
 func (m *MockServerController) GetDockerRecoveryStatus() *storage.DockerRecoveryState {
 	return &storage.DockerRecoveryState{
 		DockerAvailable: true,

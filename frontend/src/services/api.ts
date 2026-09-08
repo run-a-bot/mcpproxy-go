@@ -399,6 +399,22 @@ class APIService {
     return this.request<GlobalToolsResponse>('/api/v1/tools')
   }
 
+  // Override tool annotations and/or description
+  async overrideTools(payload: { server_name: string; tools: string[]; description?: string; annotations?: any }): Promise<APIResponse<{ success: boolean; message: string }>> {
+    return this.request<{ success: boolean; message: string }>('/api/v1/tools/override', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  // Reset tool overrides to upstream defaults
+  async resetToolOverrides(payload: { server_name: string; tools: string[] }): Promise<APIResponse<{ success: boolean; message: string }>> {
+    return this.request<{ success: boolean; message: string }>('/api/v1/tools/reset-override', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
   // Tool-level quarantine (Spec 032) + scan-gate hold evidence (Spec 088).
   //
   // The record source stays `/tools/export`: those approval records are durable,

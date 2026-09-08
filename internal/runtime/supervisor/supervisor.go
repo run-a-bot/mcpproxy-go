@@ -878,11 +878,12 @@ func toolInfosFromMetadata(tools []*config.ToolMetadata) []stateview.ToolInfo {
 		}
 
 		infos[i] = stateview.ToolInfo{
-			Name:             tool.Name,
-			Description:      tool.Description,
-			InputSchema:      inputSchema,
-			Annotations:      tool.Annotations,
-			OutputSchemaJSON: tool.OutputSchemaJSON,
+			Name:                tool.Name,
+			Description:         tool.Description,
+			OriginalDescription: tool.OriginalDescription,
+			InputSchema:         inputSchema,
+			Annotations:         tool.Annotations,
+			OutputSchemaJSON:    tool.OutputSchemaJSON,
 		}
 	}
 	return infos

@@ -36,6 +36,10 @@ import (
 type Client struct {
 	id     string
 	config *config.ServerConfig
+	// toolOverrides is a copy-on-write snapshot separate from config. The core
+	// config is intentionally immutable after construction because many hot
+	// paths read it without c.mu; changing ToolOverrides on it races discovery.
+	toolOverrides atomic.Pointer[toolOverridesSnapshot]
 	// exposePrompts mirrors config.ExposePrompts but can be updated without a
 	// reconnect (PR #973 review, P2): config itself is set once in NewClient
 	// and never reassigned, so ListPrompts/GetPrompt would otherwise keep
@@ -158,6 +162,12 @@ type Client struct {
 	onPromptsChanged func(serverName string)
 }
 
+// toolOverridesSnapshot holds an immutable override map for lock-free tool
+// discovery. Every update deep-copies the map and its values before publishing.
+type toolOverridesSnapshot struct {
+	overrides map[string]*config.ToolOverride
+}
+
 // NewClient creates a new core MCP client
 func NewClient(id string, serverConfig *config.ServerConfig, logger *zap.Logger, logConfig *config.LogConfig, globalConfig *config.Config, storage *storage.BoltDB, secretResolver *secret.Resolver) (*Client, error) {
 	return NewClientWithOptions(id, serverConfig, logger, logConfig, globalConfig, storage, false, secretResolver)
@@ -195,6 +205,7 @@ func NewClientWithOptions(id string, serverConfig *config.ServerConfig, logger *
 		),
 	}
 	c.exposePrompts.Store(resolvedServerConfig.ExposePrompts)
+	c.toolOverrides.Store(&toolOverridesSnapshot{overrides: cloneToolOverrides(resolvedServerConfig.ToolOverrides)})
 	c.retryAfter.Store(proxytransport.NewRetryAfterRecorder())
 
 	// Create secure environment manager
@@ -316,6 +327,7 @@ func (c *Client) ListTools(ctx context.Context) ([]*config.ToolMetadata, error) 
 	serverInfo := c.serverInfo
 	transportType := c.transportType
 	c.mu.RUnlock()
+	overrides := c.toolOverrides.Load()
 
 	if !c.IsConnected() || client == nil {
 		return nil, fmt.Errorf("client not connected")
@@ -412,9 +424,27 @@ func (c *Client) ListTools(ctx context.Context) ([]*config.ToolMetadata, error) 
 			}
 		}
 
+		// Apply manual tool overrides if configured (description and/or annotations)
+		effectiveDesc, effectiveAnn, isCustom := resolveToolOverride(overrides, tool.Name, tool.Description, toolMeta.Annotations)
+		if isCustom {
+			toolMeta.Description = effectiveDesc
+			toolMeta.Annotations = effectiveAnn
+			toolMeta.OriginalDescription = tool.Description
+		}
+
 		// Compute hash for tool change detection.
-		// Hash is based on serverName + toolName + description + inputSchema + outputSchema.
-		toolMeta.Hash = hash.ComputeToolHashWithOutputSchema(c.config.Name, tool.Name, tool.Description, tool.InputSchema, outputSchemaJSON)
+		// Hash is based on serverName + toolName + effective description + inputSchema + outputSchema + effective annotations.
+		var hashAnn *hash.ToolAnnotations
+		if toolMeta.Annotations != nil {
+			hashAnn = &hash.ToolAnnotations{
+				Title:           toolMeta.Annotations.Title,
+				ReadOnlyHint:    toolMeta.Annotations.ReadOnlyHint,
+				DestructiveHint: toolMeta.Annotations.DestructiveHint,
+				IdempotentHint:  toolMeta.Annotations.IdempotentHint,
+				OpenWorldHint:   toolMeta.Annotations.OpenWorldHint,
+			}
+		}
+		toolMeta.Hash = hash.ComputeToolHashWithAnnotations(c.config.Name, tool.Name, toolMeta.Description, tool.InputSchema, outputSchemaJSON, hashAnn)
 
 		tools = append(tools, toolMeta)
 	}
@@ -837,6 +867,8 @@ func (c *Client) refreshTokenWithStoredCredentials(ctx context.Context, tokenEnd
 
 // GetConfig returns the server configuration
 func (c *Client) GetConfig() *config.ServerConfig {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.config
 }
 
@@ -847,6 +879,81 @@ func (c *Client) GetConfig() *config.ServerConfig {
 // torn down and recreated.
 func (c *Client) SetExposePrompts(exposePrompts *bool) {
 	c.exposePrompts.Store(exposePrompts)
+}
+
+// SetToolOverrides publishes a copy-on-write ToolOverrides snapshot. It must
+// not mutate c.config: discovery reads that configuration outside c.mu.
+func (c *Client) SetToolOverrides(overrides map[string]*config.ToolOverride) {
+	c.toolOverrides.Store(&toolOverridesSnapshot{overrides: cloneToolOverrides(overrides)})
+}
+
+// UpdateConfig updates non-reconnect fields on the core client's configuration
+// (such as ToolOverrides and ExposePrompts) without tearing down the connection.
+func (c *Client) UpdateConfig(cfg *config.ServerConfig) {
+	if cfg == nil {
+		return
+	}
+	c.SetExposePrompts(cfg.ExposePrompts)
+	c.SetToolOverrides(cfg.ToolOverrides)
+}
+
+func resolveToolOverride(snapshot *toolOverridesSnapshot, toolName, upstreamDesc string, upstreamAnn *config.ToolAnnotations) (desc string, ann *config.ToolAnnotations, isCustom bool) {
+	desc = upstreamDesc
+	ann = upstreamAnn
+	if snapshot == nil {
+		return desc, ann, false
+	}
+	override, ok := snapshot.overrides[toolName]
+	if !ok || override == nil {
+		return desc, ann, false
+	}
+	if override.Description != "" {
+		desc = override.Description
+		isCustom = true
+	}
+	if override.Annotations != nil {
+		ann = override.Annotations
+		isCustom = true
+	}
+	return desc, ann, isCustom
+}
+
+func cloneToolOverrides(overrides map[string]*config.ToolOverride) map[string]*config.ToolOverride {
+	if len(overrides) == 0 {
+		return nil
+	}
+	cloned := make(map[string]*config.ToolOverride, len(overrides))
+	for name, override := range overrides {
+		if override == nil {
+			continue
+		}
+		copy := *override
+		if override.Annotations != nil {
+			copy.Annotations = cloneToolAnnotations(override.Annotations)
+		}
+		cloned[name] = &copy
+	}
+	return cloned
+}
+
+func cloneToolAnnotations(annotations *config.ToolAnnotations) *config.ToolAnnotations {
+	if annotations == nil {
+		return nil
+	}
+	cloned := *annotations
+	cloned.ReadOnlyHint = cloneBool(annotations.ReadOnlyHint)
+	cloned.DestructiveHint = cloneBool(annotations.DestructiveHint)
+	cloned.IdempotentHint = cloneBool(annotations.IdempotentHint)
+	cloned.OpenWorldHint = cloneBool(annotations.OpenWorldHint)
+	return &cloned
+}
+
+func cloneBool(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 // SetOnToolsChangedCallback sets the callback invoked when a notifications/tools/list_changed

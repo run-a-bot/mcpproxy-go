@@ -2113,3 +2113,128 @@ func (r *Runtime) supervisorEventForwarder() {
 		}
 	}
 }
+
+// SetToolOverrides updates or sets manual metadata overrides (description and/or annotations) for tools on a server.
+func (r *Runtime) SetToolOverrides(serverName string, tools []string, description string, hints *config.ToolAnnotations) error {
+	if serverName == "" {
+		return fmt.Errorf("server name required")
+	}
+	if len(tools) == 0 {
+		return fmt.Errorf("at least one tool name required")
+	}
+
+	serverConfig := r.lookupServerConfigForRestart(serverName)
+	if serverConfig == nil {
+		return fmt.Errorf("server '%s' not found in configuration", serverName)
+	}
+
+	r.mu.Lock()
+	if serverConfig.ToolOverrides == nil {
+		serverConfig.ToolOverrides = make(map[string]*config.ToolOverride)
+	}
+
+	for _, toolName := range tools {
+		curr, ok := serverConfig.ToolOverrides[toolName]
+		if !ok || curr == nil {
+			curr = &config.ToolOverride{}
+		}
+		if description != "" {
+			curr.Description = description
+		}
+		if hints != nil {
+			curr.Annotations = hints
+		}
+		serverConfig.ToolOverrides[toolName] = curr
+	}
+
+	if r.storageManager != nil {
+		if err := r.storageManager.SaveUpstreamServer(serverConfig); err != nil {
+			r.mu.Unlock()
+			return fmt.Errorf("failed to update server in storage: %w", err)
+		}
+	}
+	r.mu.Unlock()
+
+	if err := r.SaveConfiguration(); err != nil {
+		r.logger.Error("Failed to save configuration after tool override", zap.Error(err))
+		return fmt.Errorf("failed to save configuration: %w", err)
+	}
+
+	// Update active client config so that ListTools observes the updated ToolOverrides
+	if r.upstreamManager != nil {
+		if client, exists := r.upstreamManager.GetClient(serverName); exists && client != nil {
+			client.SetConfig(serverConfig)
+		}
+	}
+
+	// Trigger rediscovery and indexing asynchronously so new descriptions/annotations take effect in Bleve and StateView
+	go func() {
+		if err := r.RefreshServerTools(r.AppContext(), serverName); err != nil {
+			r.logger.Warn("Failed to refresh tools after setting overrides", zap.String("server", serverName), zap.Error(err))
+		}
+		r.emitServersChanged("tool_overrides_updated", map[string]any{
+			"server": serverName,
+			"tools":  tools,
+		})
+	}()
+
+	return nil
+}
+
+// ResetToolOverrides removes manual overrides for specific tools on a server.
+func (r *Runtime) ResetToolOverrides(serverName string, tools []string) error {
+	if serverName == "" {
+		return fmt.Errorf("server name required")
+	}
+	if len(tools) == 0 {
+		return fmt.Errorf("at least one tool name required")
+	}
+
+	serverConfig := r.lookupServerConfigForRestart(serverName)
+	if serverConfig == nil {
+		return fmt.Errorf("server '%s' not found in configuration", serverName)
+	}
+
+	r.mu.Lock()
+	if serverConfig.ToolOverrides != nil {
+		for _, toolName := range tools {
+			delete(serverConfig.ToolOverrides, toolName)
+		}
+		if len(serverConfig.ToolOverrides) == 0 {
+			serverConfig.ToolOverrides = nil
+		}
+	}
+
+	if r.storageManager != nil {
+		if err := r.storageManager.SaveUpstreamServer(serverConfig); err != nil {
+			r.mu.Unlock()
+			return fmt.Errorf("failed to update server in storage: %w", err)
+		}
+	}
+	r.mu.Unlock()
+
+	if err := r.SaveConfiguration(); err != nil {
+		r.logger.Error("Failed to save configuration after tool override reset", zap.Error(err))
+		return fmt.Errorf("failed to save configuration: %w", err)
+	}
+
+	// Update active client config so that ListTools observes the reset ToolOverrides
+	if r.upstreamManager != nil {
+		if client, exists := r.upstreamManager.GetClient(serverName); exists && client != nil {
+			client.SetConfig(serverConfig)
+		}
+	}
+
+	// Trigger rediscovery and indexing asynchronously so original descriptions/annotations take effect
+	go func() {
+		if err := r.RefreshServerTools(r.AppContext(), serverName); err != nil {
+			r.logger.Warn("Failed to refresh tools after resetting overrides", zap.String("server", serverName), zap.Error(err))
+		}
+		r.emitServersChanged("tool_overrides_reset", map[string]any{
+			"server": serverName,
+			"tools":  tools,
+		})
+	}()
+
+	return nil
+}

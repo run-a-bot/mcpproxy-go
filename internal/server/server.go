@@ -2005,6 +2005,16 @@ func (s *Server) DiscoverServerTools(ctx context.Context, serverName string) err
 	return s.runtime.RefreshServerTools(ctx, serverName)
 }
 
+// SetToolOverrides updates tool description and/or behavior hint annotations on a server.
+func (s *Server) SetToolOverrides(serverName string, tools []string, description string, hints *config.ToolAnnotations) error {
+	return s.runtime.SetToolOverrides(serverName, tools, description, hints)
+}
+
+// ResetToolOverrides removes manual overrides for tools on a server.
+func (s *Server) ResetToolOverrides(serverName string, tools []string) error {
+	return s.runtime.ResetToolOverrides(serverName, tools)
+}
+
 // ForceReconnectAllServers triggers reconnection attempts for all managed servers.
 func (s *Server) ForceReconnectAllServers(reason string) error {
 	s.logger.Info("HTTP API requested force reconnect for all upstream servers",

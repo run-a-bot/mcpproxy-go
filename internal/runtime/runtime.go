@@ -2791,6 +2791,9 @@ func (r *Runtime) GetServerTools(serverName string) ([]map[string]interface{}, e
 			"description": tool.Description,
 			"server_name": serverName,
 		}
+		if tool.OriginalDescription != "" {
+			toolMap["original_description"] = tool.OriginalDescription
+		}
 		if tool.InputSchema != nil {
 			toolMap["inputSchema"] = tool.InputSchema
 		}
@@ -2825,6 +2828,9 @@ func (r *Runtime) GetServerTools(serverName string) ([]map[string]interface{}, e
 					"name":        name,
 					"description": tool.Description,
 					"server_name": serverName,
+				}
+				if tool.OriginalDescription != "" {
+					toolMap["original_description"] = tool.OriginalDescription
 				}
 				if tool.ParamsJSON != "" {
 					var inputSchema map[string]interface{}

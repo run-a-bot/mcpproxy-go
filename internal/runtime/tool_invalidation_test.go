@@ -519,3 +519,62 @@ func TestToolCacheInvalidation_OrphanCleanup(t *testing.T) {
 	assert.Len(t, activeIndexed, 1)
 	assert.Equal(t, "active_tool", extractToolName(activeIndexed[0].Name))
 }
+
+// TestToolCacheInvalidation_AnnotationsChange verifies that tool annotation changes
+// produce a different hash and trigger re-indexing.
+func TestToolCacheInvalidation_AnnotationsChange(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := &config.Config{
+		DataDir:           tempDir,
+		Listen:            "127.0.0.1:0",
+		ToolResponseLimit: 0,
+		Servers:           []*config.ServerConfig{},
+		QuarantineEnabled: boolP(false),
+	}
+
+	rt, err := New(cfg, "", zap.NewNop())
+	require.NoError(t, err)
+	defer func() {
+		_ = rt.Close()
+	}()
+
+	ctx := context.Background()
+	paramsJSON := `{"type":"object","properties":{"arg1":{"type":"string"}}}`
+
+	initialTools := []*config.ToolMetadata{
+		{
+			ServerName:  "test-server",
+			Name:        "tool_a",
+			Description: "Tool description",
+			Hash:        "hash_no_annotations",
+			ParamsJSON:  paramsJSON,
+		},
+	}
+
+	err = rt.indexManager.BatchIndexTools(initialTools)
+	require.NoError(t, err)
+
+	isReadOnly := true
+	modifiedTools := []*config.ToolMetadata{
+		{
+			ServerName:  "test-server",
+			Name:        "tool_a",
+			Description: "Tool description with annotations",
+			Hash:        "hash_with_annotations",
+			ParamsJSON:  paramsJSON,
+			Annotations: &config.ToolAnnotations{
+				ReadOnlyHint: &isReadOnly,
+			},
+		},
+	}
+
+	err = rt.applyDifferentialToolUpdate(ctx, "test-server", modifiedTools)
+	require.NoError(t, err)
+
+	indexedTools, err := rt.indexManager.GetToolsByServer("test-server")
+	require.NoError(t, err)
+
+	assert.Len(t, indexedTools, 1, "Should still have 1 tool")
+	assert.Equal(t, "hash_with_annotations", indexedTools[0].Hash, "Tool should have new hash")
+	assert.Equal(t, "Tool description with annotations", indexedTools[0].Description)
+}

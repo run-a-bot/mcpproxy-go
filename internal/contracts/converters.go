@@ -493,6 +493,9 @@ func ConvertGenericToolsToTyped(genericTools []map[string]interface{}) []Tool {
 		if description, ok := generic["description"].(string); ok {
 			tool.Description = description
 		}
+		if origDesc, ok := generic["original_description"].(string); ok {
+			tool.OriginalDescription = origDesc
+		}
 		if usage, ok := generic["usage"].(int); ok {
 			tool.Usage = usage
 		}

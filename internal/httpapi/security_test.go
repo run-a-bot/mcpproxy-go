@@ -253,7 +253,13 @@ func (m *baseController) GetQuarantinedServers() ([]map[string]interface{}, erro
 	return nil, nil
 }
 func (m *baseController) UnquarantineServer(serverName string) error { return nil }
-func (m *baseController) GetManagementService() interface{}          { return nil }
+func (m *baseController) SetToolOverrides(serverName string, tools []string, description string, hints *config.ToolAnnotations) error {
+	return nil
+}
+func (m *baseController) ResetToolOverrides(serverName string, tools []string) error {
+	return nil
+}
+func (m *baseController) GetManagementService() interface{} { return nil }
 func (m *baseController) GetServerTools(serverName string) ([]map[string]interface{}, error) {
 	return nil, nil
 }
