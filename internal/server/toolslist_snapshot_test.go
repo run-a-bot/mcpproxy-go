@@ -191,9 +191,9 @@ func TestToolsListSnapshot_MatchesMergeBaseGoldens(t *testing.T) {
 //     parameter moves, which assertUpstreamServersDelta in
 //     mcp_menu_surface_test.go pins field by field.
 var toolsListAllowedDelta = map[string][]string{
-	"default_server":      {"describe_tool", "quarantine_security", "upstream_servers"},
-	"retrieve_tools_mode": {"describe_tool", "quarantine_security", "upstream_servers"},
-	"code_execution_mode": {"quarantine_security", "upstream_servers"},
+	"default_server":      {"describe_tool", "quarantine_security", "retrieve_tools", "upstream_servers"},
+	"retrieve_tools_mode": {"describe_tool", "quarantine_security", "retrieve_tools", "upstream_servers"},
+	"code_execution_mode": {"quarantine_security", "retrieve_tools", "upstream_servers"},
 }
 
 // TestToolsListSnapshot_DeltaIsEnumerated is the FR-014 gate: the goldens

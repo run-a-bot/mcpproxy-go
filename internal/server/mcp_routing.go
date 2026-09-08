@@ -650,6 +650,7 @@ func (p *MCPProxyServer) buildCodeExecModeTools() []mcpserver.ServerTool {
 			"Use this to find tools, then use the `code_execution` tool to call them via `call_tool(serverName, toolName, args)` in JavaScript. " +
 			"Do NOT use call_tool_read/write/destructive — they are not available in this mode. " +
 			"Use natural language to describe what you want to accomplish. " +
+			"To list or discover available tools without guessing BM25 search queries, use query='_' (wildcard matching tools with underscores) and adjust 'limit' (default: tools_limit, max: 100). " +
 			"Response includes a structured `session_risk` object (level, lethal_trifecta, has_open_world_tools, has_destructive_tools, has_write_tools)." +
 			retrieveToolsDiagnosticsNote),
 		mcp.WithTitleAnnotation("Retrieve Tools"),
@@ -702,6 +703,7 @@ func (p *MCPProxyServer) buildCallToolModeTools() []mcpserver.ServerTool {
 			"Results include 'annotations' (tool behavior hints like destructiveHint), 'call_with' recommendation, " +
 			"and a structured `session_risk` object (level, lethal_trifecta, has_open_world_tools, has_destructive_tools, has_write_tools). " +
 			"Compact mode returns one-line signatures ('sig': '*'=required, '~'=lossy) with first-sentence 'desc'; call describe_tool for full schemas. " +
+			"To list or discover available tools without guessing BM25 search queries, use query='_' (wildcard matching tools with underscores) and adjust 'limit' (default: tools_limit, max: 100); pass 'detail': 'compact' to avoid response truncation. " +
 			"Use natural language to describe what you want to accomplish." +
 			retrieveToolsDiagnosticsNote),
 		mcp.WithTitleAnnotation("Retrieve Tools"),

@@ -245,3 +245,43 @@ delete disabled, edit enabled), soft revocation, and expiry preservation.
 - On smaller viewports, the Actions column wraps buttons across rows without
   causing unnecessary horizontal scroll.
 - The Create Token modal wraps help text without causing horizontal scrollbars.
+
+### 6. Document wildcard tool discovery
+
+#### background
+
+Agents need a reliable way to enumerate available upstream tools when they do
+not yet know which BM25 search terms to use. The tool-discovery guidance now
+describes the underscore wildcard query, the configured and maximum result
+limits, compact response mode, and the available annotation filters.
+
+#### files
+
+##### docs/api/mcp-protocol.md (modify)
+
+Document the expanded `retrieve_tools` input schema and add an example for
+discovering tools with `query: "_"`, `limit: 100`, and compact responses.
+
+##### internal/server/mcp.go (modify)
+
+Add wildcard discovery guidance to the primary `retrieve_tools` description.
+
+##### internal/server/mcp_routing.go (modify)
+
+Add the same discovery guidance to the code-execution and call-tool mode
+descriptions.
+
+##### internal/server/testdata/toolslist_goldens/*.json (modify)
+
+Update the mode-specific tool-list snapshots for the new descriptions.
+
+##### internal/server/toolslist_snapshot_test.go (modify)
+
+Allow the `retrieve_tools` description change in each relevant snapshot delta.
+
+#### verify
+
+- The MCP protocol documentation explains all supported discovery options.
+- Agents are instructed how to enumerate tools without guessing search terms.
+- Default, retrieve-tools, and code-execution tool-list snapshots accept the
+  intentional `retrieve_tools` description change.

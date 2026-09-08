@@ -44,11 +44,17 @@ MCPProxy provides several built-in tools for managing and interacting with upstr
 
 Search for tools across all connected servers using BM25 keyword search.
 
+> **Tip (Listing all tools):** To list or discover available tools without guessing BM25 search queries, use `query: "_"` (wildcard match for all tools containing underscores), set `limit` up to `100`, and pass `"detail": "compact"` to avoid response truncation.
+
 **Input Schema:**
 ```json
 {
-  "query": "string (required) - Search keywords",
-  "limit": "number (optional) - Maximum results, default 15"
+  "query": "string (required) - Search keywords (or '_' to wildcard match tools with underscores)",
+  "limit": "number (optional) - Maximum results (default: configured tools_limit, max: 100)",
+  "detail": "string (optional) - Response mode: 'compact' (one-line signatures) or 'full' (complete inputSchema)",
+  "read_only_only": "boolean (optional) - Restrict to readOnlyHint=true tools",
+  "exclude_destructive": "boolean (optional) - Exclude destructiveHint=true tools",
+  "exclude_open_world": "boolean (optional) - Exclude openWorldHint=true tools"
 }
 ```
 
@@ -57,6 +63,15 @@ Search for tools across all connected servers using BM25 keyword search.
 {
   "query": "create github issue",
   "limit": 5
+}
+```
+
+**Example (Dump / Discover all tools):**
+```json
+{
+  "query": "_",
+  "limit": 100,
+  "detail": "compact"
 }
 ```
 
